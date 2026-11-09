@@ -1,3 +1,4 @@
+import { settleMotion } from './motion';
 import { test, expect } from '@playwright/test';
 import { openDb } from '../../src/server/db.js';
 import { hashPassword } from '../../src/server/security.js';
@@ -50,6 +51,7 @@ test('desktop public reading, exact clipboard and safe plain-text rendering', as
   await page.goto('/');
   await expect(page.getByRole('heading', { name: '让文字， 轻松抵达。' })).toBeVisible();
   expect(await page.locator('#access-code').getAttribute('autocapitalize')).toBe('none');
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/public-desktop.png', fullPage: true });
   await page.getByLabel('访问码 区分大小写').fill('Ab12');
   await page.getByRole('button', { name: '查看内容' }).click();
@@ -89,6 +91,7 @@ test('desktop public reading, exact clipboard and safe plain-text rendering', as
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Control+V');
   await expect(pasteTarget).toHaveValue(body);
   await pasteTarget.evaluate((element) => element.remove());
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/reader-desktop.png', fullPage: true });
   expect(errors).toEqual([]);
 });
@@ -103,12 +106,14 @@ async function login(page: any) {
 test('desktop admin create, edit, search, toggle, rotate, reuse and delete', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await login(page);
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/manage-desktop.png', fullPage: true });
   await page.getByRole('button', { name: '新建分享', exact: true }).first().click();
   await page.getByLabel('标题 仅在后台显示').fill('验收用分享');
   await page.getByRole('textbox', { name: /^正文/ }).fill('original\n  body');
   await page.getByRole('button', { name: '自定义', exact: true }).click();
   await page.getByLabel('访问码 四位字母或数字，区分大小写').fill('Ui01');
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/editor-desktop.png', fullPage: true });
   await page.getByRole('button', { name: '创建分享', exact: true }).click();
   const row = page.locator('.share-row').filter({ hasText: '验收用分享' });
@@ -134,27 +139,32 @@ test('desktop admin create, edit, search, toggle, rotate, reuse and delete', asy
   await expect(row).toHaveCount(0);
   await page.getByRole('textbox', { name: '搜索分享' }).fill('无匹配项');
   await expect(page.getByText('没有找到相关文字')).toBeVisible();
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/search-empty.png', fullPage: true });
 });
 test('mobile layout, full-screen editor and keyboard dialog focus', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/manage-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: '新建分享', exact: true }).first().click();
   await expect(page.getByRole('dialog', { name: '新建分享' })).toBeVisible();
   await page.getByLabel('标题 仅在后台显示').fill('手机测试');
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/editor-mobile.png', fullPage: false });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '放弃更改' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.goto('/');
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/public-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByLabel('访问码 区分大小写').fill('Ab12');
   await page.getByRole('button', { name: '查看内容' }).click();
   await expect(page.locator('.plain-text')).toBeVisible();
+  await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/reader-mobile.png', fullPage: true });
 });
 test('search ignores stale replies after a newer query', async ({ page }) => {

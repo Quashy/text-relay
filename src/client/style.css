@@ -1763,7 +1763,7 @@ dialog::backdrop {
   inset: 0;
   margin: auto;
   padding: 0;
-  width: 640px;
+  width: 880px;
   max-width: calc(100% - 32px);
   height: min(820px, calc(100dvh - 48px));
   max-height: calc(100dvh - 48px);
@@ -1792,5 +1792,69 @@ dialog {
     max-width: calc(100% - 24px);
     height: min(820px, calc(100dvh - 24px));
     max-height: calc(100dvh - 24px);
+  }
+}
+
+/* Motion only follows deliberate actions; routine list work stays quiet. */
+@media (prefers-reduced-motion: no-preference) {
+  dialog.modal[open]::backdrop {
+    animation: veil-in 180ms ease-out;
+  }
+  dialog.modal[data-exiting]::backdrop {
+    animation: veil-out 150ms ease-out forwards;
+  }
+  .primary,
+  .secondary,
+  .danger-button {
+    transition:
+      background-color 140ms ease-out,
+      color 140ms ease-out,
+      scale 140ms ease-out;
+  }
+  .primary:active:not(:disabled),
+  .secondary:active:not(:disabled),
+  .danger-button:active:not(:disabled) {
+    scale: 0.96;
+  }
+  .input,
+  .code-field,
+  .search-box {
+    transition:
+      border-color 140ms ease-out,
+      box-shadow 140ms ease-out;
+  }
+  .share-row {
+    transition: background-color 100ms ease-out;
+  }
+  .switch {
+    transition: background-color 140ms ease-out;
+  }
+  .reader-card {
+    animation: content-in 220ms ease-out;
+  }
+  .toast {
+    animation: content-in 180ms ease-out;
+  }
+}
+@keyframes veil-in {
+  from {
+    background-color: transparent;
+    backdrop-filter: blur(0);
+  }
+}
+@keyframes veil-out {
+  to {
+    background-color: transparent;
+    backdrop-filter: blur(0);
+  }
+}
+@keyframes content-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
   }
 }

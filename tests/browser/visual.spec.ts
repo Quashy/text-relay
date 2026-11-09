@@ -1,3 +1,4 @@
+import { settleMotion } from './motion';
 import { test, expect, type Page } from '@playwright/test';
 import { openDb } from '../../src/server/db.js';
 import { hashPassword } from '../../src/server/security.js';
@@ -90,11 +91,11 @@ for (const colorScheme of ['light', 'dark'] as const)
       await contrast(page);
       await page.locator('.login-card .primary').hover();
       await contrast(page);
-      if (colorScheme === 'light')
-        await page.screenshot({
-          path: `docs/evidence/login-${width === 320 ? 'mobile' : 'desktop'}.png`,
-          fullPage: true,
-        });
+      await settleMotion(page);
+      await page.screenshot({
+        path: `docs/evidence/login-${width === 320 ? 'mobile' : 'desktop'}.png`,
+        fullPage: true,
+      });
       await owner(page);
       await contrast(page);
       const trigger = page.locator('.dashboard-top .primary');
@@ -114,10 +115,10 @@ for (const colorScheme of ['light', 'dark'] as const)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      if (colorScheme === 'light')
-        await page.screenshot({
-          path: `docs/evidence/create-${width === 320 ? 'mobile' : 'desktop'}.png`,
-        });
+      await settleMotion(page);
+      await page.screenshot({
+        path: `docs/evidence/create-${width === 320 ? 'mobile' : 'desktop'}.png`,
+      });
       await page.keyboard.press('Escape');
       const discard = page.getByRole('dialog', { name: '放弃未保存的更改', exact: true });
       await expect(discard).toBeVisible();
@@ -140,3 +141,54 @@ for (const colorScheme of ['light', 'dark'] as const)
       await page.keyboard.press('Escape');
     });
   }
+
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`modal motion lifecycle: ${reducedMotion}`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await owner(page);
+    if (reducedMotion === 'no-preference') {
+      const session = await page.context().newCDPSession(page);
+      await session.send('Animation.enable');
+      await session.send('Animation.setPlaybackRate', { playbackRate: 0.1 });
+    }
+    const trigger = page.locator('.dashboard-top .primary');
+    await trigger.click();
+    const modal = page.locator('.create-dialog');
+    await expect(modal).toHaveCSS('width', '880px');
+    if (reducedMotion === 'no-preference') {
+      const entry = await modal.evaluate(
+        (el) =>
+          el
+            .getAnimations()
+            .find((a) => !(a instanceof CSSAnimation))
+            ?.effect?.getTiming().duration,
+      );
+      expect(entry).toBe(220);
+    } else {
+      expect(await modal.evaluate((el) => el.getAnimations().length)).toBe(0);
+    }
+    await expect(modal).toHaveCSS('opacity', '1');
+    await modal.locator('.drawer-header button').click();
+    if (reducedMotion === 'no-preference') {
+      await expect(modal).toHaveAttribute('data-exiting', 'true');
+      const exit = await modal.evaluate(
+        (el) =>
+          el
+            .getAnimations()
+            .find((a) => !(a instanceof CSSAnimation))
+            ?.effect?.getTiming().duration,
+      );
+      expect(exit).toBe(150);
+      // Changing the system setting mid-exit must still finish dismissal.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+    }
+    await expect(modal).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+    await trigger.click();
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+}
