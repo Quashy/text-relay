@@ -252,8 +252,10 @@ label > span {
   color: var(--muted);
 }
 .code-field:focus-within {
-  border-color: var(--accent-soft);
-  box-shadow: 0 0 0 3px #17203318;
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .code-field.invalid {
   border-color: var(--accent);
@@ -611,7 +613,9 @@ footer {
   font-size: 12px;
 }
 .search-box:focus-within {
-  border-color: var(--accent-soft);
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-color: var(--focus);
 }
 .library {
   border: 1px solid var(--line-soft);
