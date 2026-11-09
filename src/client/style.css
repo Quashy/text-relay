@@ -187,7 +187,7 @@ button svg {
   margin-top: 0;
   border: 1px solid var(--line-soft);
   border-radius: 18px;
-  background: #172033d9;
+  background: var(--canvas);
   box-shadow: 0 12px 45px #17203306;
   padding: 26px 30px 0;
 }
@@ -1535,7 +1535,6 @@ dialog::backdrop {
 }
 .landing-access .access-card {
   width: 100%;
-  background: var(--canvas);
 }
 .landing-note {
   justify-content: center;
@@ -1755,5 +1754,43 @@ dialog::backdrop {
   .code-field:focus-within,
   .search-box:focus-within {
     outline: 2px solid Highlight;
+  }
+}
+
+/* New shares use a centered native modal; existing shares retain the drawer. */
+.create-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  padding: 0;
+  width: 640px;
+  max-width: calc(100% - 32px);
+  height: min(820px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
+  background: var(--canvas);
+}
+.create-dialog > form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.create-dialog .drawer-header,
+.create-dialog .drawer-footer {
+  flex-shrink: 0;
+}
+.create-dialog .drawer-body {
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+dialog {
+  overscroll-behavior: contain;
+}
+@media (max-width: 760px) {
+  .create-dialog {
+    max-width: calc(100% - 24px);
+    height: min(820px, calc(100dvh - 24px));
+    max-height: calc(100dvh - 24px);
   }
 }

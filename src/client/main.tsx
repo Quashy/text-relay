@@ -719,34 +719,44 @@ function Manage() {
     </div>
   );
 }
+let dialogCount = 0;
+let originalBodyOverflow = '';
 function Dialog({
   children,
   close,
   label,
   drawer = false,
+  className = '',
 }: {
   children: React.ReactNode;
   close: () => void;
   label: string;
   drawer?: boolean;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const el = ref.current!,
-      previous = document.body.style.overflow;
+      previousFocus = document.activeElement as HTMLElement | null;
+    if (dialogCount === 0) originalBodyOverflow = document.body.style.overflow;
+    dialogCount++;
     document.body.style.overflow = 'hidden';
     el.showModal();
+    el.querySelector<HTMLElement>('[data-dialog-initial-focus]')?.focus();
     return () => {
-      document.body.style.overflow = previous;
       el.close();
+      dialogCount--;
+      if (dialogCount === 0) document.body.style.overflow = originalBodyOverflow;
+      if (previousFocus?.isConnected) previousFocus.focus();
     };
   }, []);
   return (
     <dialog
-      className={drawer ? 'drawer' : 'modal'}
+      className={`${drawer ? 'drawer' : 'modal'} ${className}`.trim()}
       ref={ref}
       aria-label={label}
       onCancel={(e) => {
+        e.stopPropagation();
         e.preventDefault();
         close();
       }}
@@ -812,7 +822,8 @@ function Editor({
     <Dialog
       close={busy ? () => {} : requestClose}
       label={existing ? '编辑分享' : '新建分享'}
-      drawer
+      drawer={existing}
+      className={existing ? undefined : 'create-dialog'}
     >
       <form onSubmit={save}>
         <div className="drawer-header">
@@ -839,6 +850,7 @@ function Editor({
           </label>
           <input
             id="title"
+            data-dialog-initial-focus
             className="input"
             placeholder="给这段文字起个名字"
             value={title}
@@ -945,7 +957,7 @@ function Editor({
         </div>
       </form>
       {discard && (
-        <div className="discard">
+        <Dialog label="放弃未保存的更改" close={() => setDiscard(false)}>
           <p>有尚未保存的更改，确定放弃吗？</p>
           <button className="secondary" onClick={() => setDiscard(false)}>
             继续编辑
@@ -953,7 +965,7 @@ function Editor({
           <button className="danger-button" onClick={close}>
             放弃更改
           </button>
-        </div>
+        </Dialog>
       )}
     </Dialog>
   );
