@@ -100,7 +100,7 @@ for (const colorScheme of ['light', 'dark'] as const)
       await contrast(page);
       const trigger = page.locator('.dashboard-top .primary');
       await trigger.click();
-      const modal = page.locator('dialog.create-dialog');
+      const modal = page.locator('dialog.share-dialog');
       await expect(modal).toBeVisible();
       await expect(modal).not.toHaveClass(/drawer/);
       const rect = await modal.boundingBox();
@@ -122,7 +122,14 @@ for (const colorScheme of ['light', 'dark'] as const)
       await page.keyboard.press('Escape');
       const discard = page.getByRole('dialog', { name: '放弃未保存的更改', exact: true });
       await expect(discard).toBeVisible();
+      await expect(discard.getByRole('heading')).toHaveText('放弃未保存的更改？');
+      await expect(discard.locator('.secondary')).toBeFocused();
+      await expect(discard).toHaveAttribute('aria-describedby', 'discard-description');
       await contrast(page);
+      await settleMotion(page);
+      await page.screenshot({
+        path: `docs/evidence/discard-${width === 320 ? 'mobile' : 'desktop'}.png`,
+      });
       await page.keyboard.press('Escape');
       await expect(discard).toHaveCount(0);
       await expect(page.locator('#title')).toHaveValue('Unsaved draft');
@@ -131,10 +138,40 @@ for (const colorScheme of ['light', 'dark'] as const)
       await expect(modal).toHaveCount(0);
       await expect(trigger).toBeFocused();
       expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
-      await page.locator('.edit-button').first().click();
-      await expect(page.locator('dialog.drawer')).toBeVisible();
+      const editTrigger = page.locator('.edit-button').first();
+      await editTrigger.click();
+      await expect(modal).toBeVisible();
+      await expect(modal).not.toHaveClass(/drawer/);
+      await expect(page.locator('#title')).toHaveValue('Contrast sample');
+      await expect(page.locator('#body')).toHaveValue('A plain text sample');
+      await expect(modal.locator('.existing-code code')).toHaveText('Ab12');
+      await expect(page.locator('#title')).toBeFocused();
       await contrast(page);
+      await settleMotion(page);
+      const editRect = await modal.boundingBox();
+      expect(Math.abs(editRect!.x + editRect!.width / 2 - width / 2)).toBeLessThan(2);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: `docs/evidence/edit-${width === 320 ? 'mobile' : 'desktop'}.png`,
+      });
+      await page.locator('#title').fill('Unsaved edit');
       await page.keyboard.press('Escape');
+      await expect(discard).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(discard).toHaveCount(0);
+      await expect(page.locator('#title')).toHaveValue('Unsaved edit');
+      await modal.locator('.drawer-header button').click();
+      await page.locator('.danger-button').click();
+      await expect(modal).toHaveCount(0);
+      await expect(editTrigger).toBeFocused();
+      expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+      await editTrigger.click();
+      await expect(page.locator('#title')).toHaveValue('Contrast sample');
+      await expect(modal.locator('.existing-code code')).toHaveText('Ab12');
+      await page.keyboard.press('Escape');
+      await expect(modal).toHaveCount(0);
       await page.locator('.account button').first().click();
       await expect(page.locator('dialog.modal')).toBeVisible();
       await contrast(page);
@@ -142,53 +179,56 @@ for (const colorScheme of ['light', 'dark'] as const)
     });
   }
 
-for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-  test(`modal motion lifecycle: ${reducedMotion}`, async ({ page }) => {
-    await page.emulateMedia({ reducedMotion });
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    await owner(page);
-    if (reducedMotion === 'no-preference') {
-      const session = await page.context().newCDPSession(page);
-      await session.send('Animation.enable');
-      await session.send('Animation.setPlaybackRate', { playbackRate: 0.1 });
-    }
-    const trigger = page.locator('.dashboard-top .primary');
-    await trigger.click();
-    const modal = page.locator('.create-dialog');
-    await expect(modal).toHaveCSS('width', '880px');
-    if (reducedMotion === 'no-preference') {
-      const entry = await modal.evaluate(
-        (el) =>
-          el
-            .getAnimations()
-            .find((a) => !(a instanceof CSSAnimation))
-            ?.effect?.getTiming().duration,
-      );
-      expect(entry).toBe(220);
-    } else {
-      expect(await modal.evaluate((el) => el.getAnimations().length)).toBe(0);
-    }
-    await expect(modal).toHaveCSS('opacity', '1');
-    await modal.locator('.drawer-header button').click();
-    if (reducedMotion === 'no-preference') {
-      await expect(modal).toHaveAttribute('data-exiting', 'true');
-      const exit = await modal.evaluate(
-        (el) =>
-          el
-            .getAnimations()
-            .find((a) => !(a instanceof CSSAnimation))
-            ?.effect?.getTiming().duration,
-      );
-      expect(exit).toBe(150);
-      // Changing the system setting mid-exit must still finish dismissal.
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-    }
-    await expect(modal).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
-    await trigger.click();
-    await page.keyboard.press('Escape');
-    await expect(modal).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-  });
-}
+for (const editorMode of ['new', 'edit'] as const)
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`modal motion lifecycle: ${editorMode}, ${reducedMotion}`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion });
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await owner(page);
+      if (reducedMotion === 'no-preference') {
+        const session = await page.context().newCDPSession(page);
+        await session.send('Animation.enable');
+        await session.send('Animation.setPlaybackRate', { playbackRate: 0.1 });
+      }
+      const trigger = page
+        .locator(editorMode === 'new' ? '.dashboard-top .primary' : '.edit-button')
+        .first();
+      await trigger.click();
+      const modal = page.locator('.share-dialog');
+      await expect(modal).toHaveCSS('width', '1120px');
+      if (reducedMotion === 'no-preference') {
+        const entry = await modal.evaluate(
+          (el) =>
+            el
+              .getAnimations()
+              .find((a) => !(a instanceof CSSAnimation))
+              ?.effect?.getTiming().duration,
+        );
+        expect(entry).toBe(220);
+      } else {
+        expect(await modal.evaluate((el) => el.getAnimations().length)).toBe(0);
+      }
+      await expect(modal).toHaveCSS('opacity', '1');
+      await modal.locator('.drawer-header button').click();
+      if (reducedMotion === 'no-preference') {
+        await expect(modal).toHaveAttribute('data-exiting', 'true');
+        const exit = await modal.evaluate(
+          (el) =>
+            el
+              .getAnimations()
+              .find((a) => !(a instanceof CSSAnimation))
+              ?.effect?.getTiming().duration,
+        );
+        expect(exit).toBe(150);
+        // Changing the system setting mid-exit must still finish dismissal.
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+      }
+      await expect(modal).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+      expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+      await trigger.click();
+      await page.keyboard.press('Escape');
+      await expect(modal).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+    });
+  }

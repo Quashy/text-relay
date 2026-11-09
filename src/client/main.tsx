@@ -24,6 +24,7 @@ import {
   LoaderCircle,
   ShieldCheck,
   Github,
+  AlertTriangle,
 } from 'lucide-react';
 import type { Share, ShareList } from '../shared/types';
 import './style.css';
@@ -729,6 +730,7 @@ function Dialog({
   className = '',
   exiting = false,
   onExited,
+  descriptionId,
 }: {
   children: React.ReactNode;
   close: () => void;
@@ -737,8 +739,10 @@ function Dialog({
   className?: string;
   exiting?: boolean;
   onExited?: () => void;
+  descriptionId?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const [nested] = useState(() => dialogCount > 0);
   const exitCallback = useRef(onExited);
   exitCallback.current = onExited;
   useEffect(() => {
@@ -801,6 +805,8 @@ function Dialog({
       className={`${drawer ? 'drawer' : 'modal'} ${className}`.trim()}
       ref={ref}
       aria-label={label}
+      aria-describedby={descriptionId}
+      data-nested={nested || undefined}
       data-exiting={exiting || undefined}
       onCancel={(e) => {
         e.stopPropagation();
@@ -828,10 +834,6 @@ function Editor({
   const [exiting, setExiting] = useState(false);
   const afterExit = useRef(onClose);
   const dismiss = (action: () => void) => {
-    if (existing) {
-      action();
-      return;
-    }
     if (exiting) return;
     afterExit.current = action;
     setExiting(true);
@@ -882,8 +884,7 @@ function Editor({
     <Dialog
       close={busy ? () => {} : requestClose}
       label={existing ? '编辑分享' : '新建分享'}
-      drawer={existing}
-      className={existing ? undefined : 'create-dialog'}
+      className="share-dialog"
       exiting={exiting}
       onExited={() => afterExit.current()}
     >
@@ -907,98 +908,102 @@ function Editor({
           </button>
         </div>
         <div className="drawer-body">
-          <label htmlFor="title">
-            标题 <span>仅在后台显示</span>
-          </label>
-          <input
-            id="title"
-            data-dialog-initial-focus
-            className="input"
-            placeholder="给这段文字起个名字"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            maxLength={120}
-            required
-            autoFocus
-          />
-          <label htmlFor="body">
-            正文 <span>{(new TextEncoder().encode(body).length / 1024).toFixed(1)} / 100 KiB</span>
-          </label>
-          <textarea
-            id="body"
-            className="input body-input"
-            placeholder="写下或粘贴你想传递的文字…"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            required
-            spellCheck={false}
-          />
-          <div className="form-divider" />
-          <label htmlFor="new-code">
-            访问码 <span>四位字母或数字，区分大小写</span>
-          </label>
-          {existing ? (
-            <>
-              <div className="existing-code">
-                <code>{share.code}</code>
-                <span>换码请使用列表中的换码按钮</span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="code-mode">
-                <button
-                  type="button"
-                  className={!manual ? 'selected' : ''}
-                  onClick={() => setManual(false)}
-                >
-                  <Shuffle size={16} />
-                  自动生成
-                </button>
-                <button
-                  type="button"
-                  className={manual ? 'selected' : ''}
-                  onClick={() => setManual(true)}
-                >
-                  <KeyRound size={16} />
-                  自定义
-                </button>
-              </div>
-              {manual ? (
-                <input
-                  className="input custom-code"
-                  id="new-code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  pattern="[A-Za-z0-9]{4}"
-                  minLength={4}
-                  maxLength={4}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  placeholder="例如 Ab12"
-                  required
-                />
-              ) : (
-                <p className="field-hint">保存时，为你生成一个尚未使用的四位访问码。</p>
-              )}
-            </>
-          )}
-          <label className="toggle-row">
-            <div>
-              <strong>启用分享</strong>
-              <small>
-                {enabled ? '知道访问码的人可以查看正文' : '访客暂时无法查看，访问码仍被保留'}
-              </small>
-            </div>
+          <div className="editor-content">
+            <label htmlFor="title">
+              标题 <span>仅在后台显示</span>
+            </label>
             <input
-              className="switch"
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
+              id="title"
+              data-dialog-initial-focus
+              className="input"
+              placeholder="给这段文字起个名字"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={120}
+              required
+              autoFocus
             />
-          </label>
-          <div className="error" role="alert">
+            <label htmlFor="body">
+              正文{' '}
+              <span>{(new TextEncoder().encode(body).length / 1024).toFixed(1)} / 100 KiB</span>
+            </label>
+            <textarea
+              id="body"
+              className="input body-input"
+              placeholder="写下或粘贴你想传递的文字…"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              required
+              spellCheck={false}
+            />
+          </div>
+          <section className="editor-settings" aria-label="分享设置">
+            <label htmlFor="new-code">
+              访问码 <span>四位字母或数字，区分大小写</span>
+            </label>
+            {existing ? (
+              <>
+                <div className="existing-code">
+                  <code>{share.code}</code>
+                  <span>换码请使用列表中的换码按钮</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="code-mode">
+                  <button
+                    type="button"
+                    className={!manual ? 'selected' : ''}
+                    onClick={() => setManual(false)}
+                  >
+                    <Shuffle size={16} />
+                    自动生成
+                  </button>
+                  <button
+                    type="button"
+                    className={manual ? 'selected' : ''}
+                    onClick={() => setManual(true)}
+                  >
+                    <KeyRound size={16} />
+                    自定义
+                  </button>
+                </div>
+                {manual ? (
+                  <input
+                    className="input custom-code"
+                    id="new-code"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    pattern="[A-Za-z0-9]{4}"
+                    minLength={4}
+                    maxLength={4}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder="例如 Ab12"
+                    required
+                  />
+                ) : (
+                  <p className="field-hint">保存时，为你生成一个尚未使用的四位访问码。</p>
+                )}
+              </>
+            )}
+            <label className="toggle-row">
+              <div>
+                <strong>启用分享</strong>
+                <small>
+                  {enabled ? '知道访问码的人可以查看正文' : '访客暂时无法查看，访问码仍被保留'}
+                </small>
+              </div>
+              <input
+                className="switch"
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+              />
+            </label>
+          </section>
+          <div className="error editor-errors" role="alert">
             {error}
           </div>
         </div>
@@ -1019,14 +1024,27 @@ function Editor({
         </div>
       </form>
       {discard && (
-        <Dialog label="放弃未保存的更改" close={() => setDiscard(false)}>
-          <p>有尚未保存的更改，确定放弃吗？</p>
-          <button className="secondary" onClick={() => setDiscard(false)}>
-            继续编辑
-          </button>
-          <button className="danger-button" onClick={close}>
-            放弃更改
-          </button>
+        <Dialog
+          label="放弃未保存的更改"
+          descriptionId="discard-description"
+          close={() => setDiscard(false)}
+          className="confirmation-dialog"
+        >
+          <div className="confirmation-symbol" aria-hidden="true">
+            <AlertTriangle size={22} />
+          </div>
+          <h2>放弃未保存的更改？</h2>
+          <p id="discard-description" className="modal-description">
+            本次修改尚未保存。放弃后将无法恢复，已保存的内容不会受影响。
+          </p>
+          <div className="modal-buttons">
+            <button className="secondary" onClick={() => setDiscard(false)}>
+              继续编辑
+            </button>
+            <button className="danger-button" onClick={close}>
+              放弃更改
+            </button>
+          </div>
         </Dialog>
       )}
     </Dialog>

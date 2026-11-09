@@ -142,7 +142,7 @@ test('desktop admin create, edit, search, toggle, rotate, reuse and delete', asy
   await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/search-empty.png', fullPage: true });
 });
-test('mobile layout, full-screen editor and keyboard dialog focus', async ({ page }) => {
+test('mobile layout, centered editor and keyboard dialog focus', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
   await settleMotion(page);

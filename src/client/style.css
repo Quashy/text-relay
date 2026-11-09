@@ -1757,30 +1757,30 @@ dialog::backdrop {
   }
 }
 
-/* New shares use a centered native modal; existing shares retain the drawer. */
-.create-dialog {
+/* New and existing shares use the same centered native modal. */
+.share-dialog {
   position: fixed;
   inset: 0;
   margin: auto;
   padding: 0;
-  width: 880px;
-  max-width: calc(100% - 32px);
+  width: 1120px;
+  max-width: calc(100% - 64px);
   height: min(820px, calc(100dvh - 48px));
   max-height: calc(100dvh - 48px);
   overflow: hidden;
   background: var(--canvas);
 }
-.create-dialog > form {
+.share-dialog > form {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
 }
-.create-dialog .drawer-header,
-.create-dialog .drawer-footer {
+.share-dialog .drawer-header,
+.share-dialog .drawer-footer {
   flex-shrink: 0;
 }
-.create-dialog .drawer-body {
+.share-dialog .drawer-body {
   min-height: 0;
   overscroll-behavior: contain;
 }
@@ -1788,7 +1788,7 @@ dialog {
   overscroll-behavior: contain;
 }
 @media (max-width: 760px) {
-  .create-dialog {
+  .share-dialog {
     max-width: calc(100% - 24px);
     height: min(820px, calc(100dvh - 24px));
     max-height: calc(100dvh - 24px);
@@ -1856,5 +1856,139 @@ dialog {
   to {
     opacity: 1;
     translate: 0 0;
+  }
+}
+
+/* Shared content, settings and confirmation hierarchy. */
+.share-dialog .drawer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 28px;
+  align-content: start;
+}
+.editor-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.editor-content .input {
+  flex-shrink: 0;
+}
+.editor-content .body-input {
+  flex: 1;
+  min-height: 360px;
+}
+.editor-content > label:first-child,
+.editor-settings > label:first-child {
+  margin-top: 0;
+}
+.editor-settings {
+  align-self: start;
+  padding: 20px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel);
+  min-width: 0;
+}
+.editor-settings > label:first-child {
+  display: block;
+}
+.editor-settings > label:first-child > span {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.editor-settings .toggle-row {
+  align-items: flex-start;
+  padding-bottom: 0;
+}
+.editor-settings .existing-code {
+  flex-wrap: wrap;
+}
+.editor-errors {
+  grid-column: 1 / -1;
+}
+.editor-errors:empty {
+  display: none;
+}
+.modal:not(.share-dialog) {
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+.modal h2 {
+  line-height: 1.4;
+}
+.modal-description {
+  font-size: 14px;
+}
+.modal-buttons {
+  gap: 12px;
+  margin-top: 28px;
+}
+.modal-buttons > button {
+  min-height: 44px;
+  min-width: 108px;
+}
+.confirmation-symbol {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--warning);
+  background: var(--warning-soft);
+  margin-bottom: 18px;
+}
+.confirmation-dialog h2 {
+  margin-bottom: 12px;
+}
+dialog[data-nested]::backdrop {
+  background: #17203326;
+  backdrop-filter: none;
+}
+.dashboard-top {
+  align-items: flex-end;
+}
+.dashboard-top > .primary {
+  margin-top: 0;
+}
+.dashboard-top p {
+  line-height: 1.8;
+}
+.library-toolbar {
+  flex-wrap: wrap;
+}
+.search-box {
+  width: min(360px, 100%);
+}
+@media (max-width: 900px) {
+  .share-dialog .drawer-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .editor-content .body-input {
+    min-height: 260px;
+  }
+}
+@media (max-width: 760px) {
+  .modal-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .modal-buttons > button {
+    min-width: 0;
+    padding-inline: 12px;
+  }
+  .editor-settings {
+    padding: 16px;
+  }
+  .dashboard-top {
+    align-items: flex-start;
+  }
+  .dashboard-top > .primary {
+    margin-top: 12px;
+  }
+  .search-box {
+    width: 100%;
   }
 }
