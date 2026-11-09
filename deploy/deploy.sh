@@ -26,14 +26,16 @@ if [[ -f "$base/build.env" ]]; then
     build_args+=(--build-arg "NODE_BUILD_IMAGE=$NODE_BUILD_IMAGE")
   fi
 fi
-docker build "${build_args[@]}" --tag "text-relay:$sha" "$release"
 export APP_VERSION="$sha"
 compose() { docker compose --project-name text-relay --env-file "$base/.env" -f "$base/compose.yaml" "$@"; }
 old=$(compose ps -q app)
 previous=
 if [[ -n "$old" ]]; then
-  previous=$(docker inspect --format '{{.Image}}' "$old")
+  previous=$(docker inspect --format '{{.Config.Image}}' "$old")
   docker image tag "$previous" text-relay:rollback
+fi
+docker build "${build_args[@]}" --tag "text-relay:$sha" "$release"
+if [[ -n "$old" ]]; then
   compose exec -T app node dist/server/cli.js backup "/app/backups/pre-deploy-$sha-$(date -u +%Y%m%dT%H%M%S)-$$.db"
 fi
 healthy() {
