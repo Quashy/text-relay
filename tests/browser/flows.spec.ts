@@ -55,9 +55,40 @@ test('desktop public reading, exact clipboard and safe plain-text rendering', as
   await page.getByRole('button', { name: '查看内容' }).click();
   await expect(page.locator('.plain-text')).toHaveText(body, { useInnerText: false });
   expect(await page.evaluate(() => 'hacked' in window)).toBe(false);
+  expect(await page.locator('.plain-text').textContent()).toBe(body);
+  await page.evaluate(() => {
+    const writeText = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = async (text: string) => {
+      (window as typeof window & { clipboardWriteInput?: string }).clipboardWriteInput = text;
+      await writeText(text);
+    };
+  });
   await page.getByRole('button', { name: '复制全文' }).click();
   await expect(page.getByRole('button', { name: '已复制' })).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(body);
+  // The app must pass the original string unchanged to the Clipboard API.
+  expect(
+    await page.evaluate(
+      () => (window as typeof window & { clipboardWriteInput?: string }).clipboardWriteInput,
+    ),
+  ).toBe(body);
+  const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+  // Windows native text clipboards can convert every LF to CRLF. Accept only
+  // that exact conversion, never trim whitespace or normalize arbitrary CRs.
+  const allowedClipboardValues =
+    process.platform === 'win32' ? [body, body.replace(/\n/g, '\r\n')] : [body];
+  expect(allowedClipboardValues).toContain(clipboardText);
+  // Exercise an actual paste into a browser text field, including blank lines,
+  // tabs, leading/trailing spaces, and the final newline.
+  await page.evaluate(() => {
+    const target = document.createElement('textarea');
+    target.id = 'clipboard-paste-verification';
+    document.body.append(target);
+  });
+  const pasteTarget = page.locator('#clipboard-paste-verification');
+  await pasteTarget.focus();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Control+V');
+  await expect(pasteTarget).toHaveValue(body);
+  await pasteTarget.evaluate((element) => element.remove());
   await page.screenshot({ path: 'docs/evidence/reader-desktop.png', fullPage: true });
   expect(errors).toEqual([]);
 });
