@@ -1,0 +1,39 @@
+name: Deploy TextRelay
+on:
+  workflow_run:
+    workflows: [Check TextRelay]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: text-relay-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == 'Quashy/text-relay' &&
+      github.repository == 'Quashy/text-relay'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Deploy checked commit
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          DEPLOY_KEY: ${{ secrets.TEXTRELAY_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.TEXTRELAY_SSH_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          umask 077
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$work/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$work/known_hosts"
+          ssh -F /dev/null -i "$work/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$work/known_hosts" \
+            -o ConnectTimeout=15 ubuntu@1.14.186.80 "$DEPLOY_SHA"

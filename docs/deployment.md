@@ -1,38 +1,40 @@
-# 自部署与后续发布
+# 鑷儴缃蹭笌鍚庣画鍙戝竷
 
-当前没有部署服务器、创建远程或生成部署密钥。以下是可审阅方案；现有服务器架构、域名、HTTPS 和代理拓扑需在用户参与的下一步确认。
+褰撳墠娌℃湁閮ㄧ讲鏈嶅姟鍣ㄣ€佸垱寤鸿繙绋嬫垨鐢熸垚閮ㄧ讲瀵嗛挜銆備互涓嬫槸鍙闃呮柟妗堬紱鐜版湁鏈嶅姟鍣ㄦ灦鏋勩€佸煙鍚嶃€丠TTPS 鍜屼唬鐞嗘嫇鎵戦渶鍦ㄧ敤鎴峰弬涓庣殑涓嬩竴姝ョ‘璁ゃ€?
+## 涓€涓簲鐢紝涓€涓暟鎹嵎
 
-## 一个应用，一个数据卷
+鏈?Docker 鐨勬満鍣ㄥ彲浣跨敤 deploy/compose.yaml銆傝绀轰緥鍋囪 Nginx 鍦ㄥ涓绘満锛岄€氳繃 127.0.0.1:18080 璁块棶搴旂敤銆傚鍣ㄤ唬鐞嗘嫇鎵戦渶瑕佽皟鏁村彈闄愮綉缁滐紝涓嶈兘鐓ф妱銆?
+1. 閰嶇疆 .env 涓殑瀹為檯 APP_ORIGIN=https://share.example.com锛涚敓浜у繀椤?HTTPS銆丆OOKIE_SECURE=true銆丯ODE_ENV=production銆?2. 鏋勫缓骞跺惎鍔ㄧ嫭绔?Compose project锛歚docker compose -f deploy/compose.yaml up -d --build`銆?3. 浜や簰鍒濆鍖栧敮涓€绠＄悊鍛橈細`docker compose -f deploy/compose.yaml exec app node dist/server/cli.js init`銆?4. 鏂板鏈珯 Nginx 閰嶇疆涓庤瘉涔︼紝鍙傝€冪ず渚嬶紱涓嶈鐩栫幇鏈夌珯鐐广€傚厛 nginx -t锛屽啀骞虫粦 reload銆?5. 楠岃瘉鍏ュ彛 HTTPS銆佺櫥褰曘€佽鍙栥€侀檺閫熷拰鐜版湁绔欑偣銆傛暟鎹笌澶囦唤涓虹嫭绔?named volume锛屽鍣ㄩ噸寤轰笉鍒犻櫎瀹冧滑锛涚姝?down -v銆?
+绀轰緥瀹瑰櫒闈?root銆佸彧璇绘牴鐩綍銆佸崟鐙彲鍐欐暟鎹嵎锛屼笉鎸?Docker socket锛岄檺鍒?CPU/鍐呭瓨/杩涚▼銆傞暅鍍忔瀯寤轰笌杩愯鍧囦负 Node24 Debian锛屽師鐢?SQLite 鍖归厤鍚屼竴 Linux 鐜銆傛寮忔瀯寤哄墠纭 CPU 鏋舵瀯锛涙湰浜戠數鑴戞棤 Docker锛屽鍣ㄥ疄娴嬪皻鏈畬鎴愩€?
+## 鐪熷疄鏉ユ簮 IP 涓庨檺閫?
+搴旂敤榛樿涓嶄俊浠讳换浣曡浆鍙戝ご銆傚弽浠ｉ儴缃插悗璁剧疆 TRUSTED_PROXY 涓哄簲鐢ㄥ疄闄呯湅鍒扮殑**宸茬‘璁や唬鐞嗗湴鍧€/CIDR**銆傚涓?Nginx 杞彂鑷?Docker 鍙戝竷绔彛鏃跺彲鑳界湅鍒?bridge 缃戝叧鍦板潃锛屼笉鍙洸璁?loopback 鎴栦俊浠诲叏閮ㄧ綉娈点€傚厛鍦ㄩ殧绂婚厤缃牳瀹烇紝浠ｇ悊瑕嗙洊 X-Forwarded-For锛屽簲鐢ㄧ鍙ｄ粎鍥炵幆寮€鏀俱€侼ginx 绀轰緥鍙﹁ IP 鍜屽叏绔欏叆鍙ｉ绠楋紝缂栫爜璺緞浠嶅彈搴旂敤璺敱闄愰€熶繚鎶ゃ€傚鐢ㄦ埛鍏变韩鍑哄彛 IP 鐨勯槇鍊兼牴鎹疄闄呴噺璋冩暣銆?
+搴旂敤鍋ュ悍妫€鏌ラ渶甯﹂厤缃煙鍚嶇殑 Host銆備唬鐞嗗繀椤讳繚鐣?Host銆侶TTP 鍙仛杞?HTTPS 鎴栬瘉涔︽牎楠岋紱HSTS 鍦ㄦ牳楠岃瘉涔︾画鏈熷拰鏈珯褰卞搷鍚庡惎鐢ㄣ€?
+## 淇濇寔 CI/CD 绠€鍗?
+褰撳墠 .github/workflows/ci.yml 鏄棤绉樺瘑鐨?CI锛氬畨瑁呴攣鏂囦欢 鈫?绫诲瀷妫€鏌?鈫?API 鈫?鏋勫缓 鈫?Chromium 鈫?渚濊禆瀹¤ 鈫?Docker 鏋勫缓銆侾R 鍜屽垎鏀潎涓嶆帴瑙︾敓浜у嚟鎹紝涔熶笉涓婁紶浜х墿銆侫ctions 鏄惁鍦?GitHub 瀹為檯杩愯锛岄渶涓嬩竴姝ユ帹閫佸悗楠岃瘉銆?
+鍚庣画鎺ラ€?CD 鏃朵繚鐣欎竴涓伐浣滄祦锛宮ain push 涓旀鏌ュ叏閫氳繃鍚庯細
+1. 鏋勫缓鐩爣鏈嶅姟鍣ㄦ灦鏋勯暅鍍忥紝鏍囩涓烘彁浜?SHA銆?2. 缁忓浐瀹氫富鏈烘寚绾瑰拰鍙楅檺閮ㄧ讲鍏ュ彛浼犺緭闀滃儚锛屼笉鎺堜簣鏅€?shell 鎴栧叏涓绘満 Docker 鎺у埗鏉冦€?3. 鍙栧緱椤圭洰鍙戝竷閿侊紝鎷掔粷杩囨椂鍙戝竷锛岃縼绉诲墠涓€鑷存€у浠姐€?4. 鍙洿鏂?TextRelay 瀹瑰櫒锛屽仴搴峰強 HTTPS 鍐掔儫閫氳繃鍐嶈褰曟垚鍔熴€?5. 澶辫触淇濈暀鏃ф湇鍔★紱浠呭湪 schema 鍏煎鏃跺洖婊氶暅鍍忥紝鏁版嵁搴撴仮澶嶅彟鎸夋紨缁冩楠ゅ鐞嗐€?
+骞跺彂缁?cancel-in-progress:false锛屽姞鏈嶅姟鍣ㄥ彂甯冨簭鍙烽槻鏃ф瀯寤鸿鐩栨柊鐗堟湰銆備笉浣跨敤 pull_request_target銆傜瀵嗕粎缃簬鍙楁帶 GitHub environment/Secrets锛屼笉鍐欒繘 YAML 鎴栦粨搴撱€傚綋鍓嶆病鏈変负鏈煡鐩爣鍐欎竴涓亣瑁呭彲鐩存帴杩愯鐨勭敓浜ч儴缃叉楠ゃ€?
+## GitHub 浜ゆ帴
 
-有 Docker 的机器可使用 deploy/compose.yaml。该示例假设 Nginx 在宿主机，通过 127.0.0.1:18080 访问应用。容器代理拓扑需要调整受限网络，不能照抄。
+鏈湴 Git 宸插噯澶囷紱涓嶈皟鐢?gh auth login銆佷笉鍒涘缓 origin銆佷笉 push銆傜敤鎴峰弬涓庢椂鍏堢‘璁よ处鍙?褰掑睘锛屽啀杩愯 GitHub CLI 鐨勮澶囩櫥褰曟祦绋嬶紝鐢?CLI 瀹為檯杩斿洖鍦板潃涓庡綋娆￠獙璇佺爜锛涗笉棰勫厛鐢熸垚浼氳繃鏈熺殑璁惧鐮併€傜劧鍚庢鏌ユ殏瀛樺唴瀹广€佸缓绔嬪叕鍏变粨搴撳苟鎸夌敤鎴锋壒鍑嗚寖鍥存帹閫併€?
 
-1. 配置 .env 中的实际 APP_ORIGIN=https://share.example.com；生产必须 HTTPS、COOKIE_SECURE=true、NODE_ENV=production。
-2. 构建并启动独立 Compose project：`docker compose -f deploy/compose.yaml up -d --build`。
-3. 交互初始化唯一管理员：`docker compose -f deploy/compose.yaml exec app node dist/server/cli.js init`。
-4. 新增本站 Nginx 配置与证书，参考示例；不覆盖现有站点。先 nginx -t，再平滑 reload。
-5. 验证入口 HTTPS、登录、读取、限速和现有站点。数据与备份为独立 named volume，容器重建不删除它们；禁止 down -v。
+# Production deployment
 
-示例容器非 root、只读根目录、单独可写数据卷，不挂 Docker socket，限制 CPU/内存/进程。镜像构建与运行均为 Node24 Debian，原生 SQLite 匹配同一 Linux 环境。正式构建前确认 CPU 架构；本云电脑无 Docker，容器实测尚未完成。
+Operator setup (not performed by CI):
+- Install reviewed deploy/deploy.sh as root:root 0755 /usr/local/sbin/textrelay-deploy, and deploy/ssh-command.sh as root:root 0755 /usr/local/sbin/textrelay-ssh-command. Never execute wrappers from the fetched repository.
+- Create root-owned /opt/text-relay, /opt/text-relay/releases and a root-owned Git repository /opt/text-relay/repo. Keep all parent directories and repository configuration unwritable by ubuntu/the deployment key.
+- Install reviewed deploy/production.yaml as /opt/text-relay/compose.yaml, root:root 0644. Preserve /opt/text-relay/.env (root:root 0600), with APP_ORIGIN=https://1.14.186.80 and existing app secrets. CI never copies or replaces these operator files. Compose resolves .env relative to this installed file.
+- Preserve the existing text-relay project and its text-relay_textrelay-data and text-relay_textrelay-backups volumes. Confirm actual volume names before adoption; do not create an empty replacement for existing data. No down -v is used.
+- Grant only the fixed wrapper via a reviewed sudoers entry: ubuntu ALL=(root) NOPASSWD: /usr/local/sbin/textrelay-deploy *
+  The wrapper validates exactly one lowercase 40-character SHA. Validate sudoers using visudo. An already privileged ubuntu account is not a dedicated least-privilege account; the new SSH key is restricted separately.
+- Add the dedicated public key to ubuntu authorized_keys with restrict,command="/usr/local/sbin/textrelay-ssh-command" options. No PTY, forwarding, arbitrary command, or shell is granted to this key. Keep the authorized_keys file and SSH setup under operator control.
+- Configure repository secrets TEXTRELAY_DEPLOY_KEY and TEXTRELAY_SSH_KNOWN_HOSTS. Obtain and verify the server host key through a trusted independent channel; do not trust ssh-keyscan output alone. The known_hosts entry must match 1.14.186.80.
+- Configure Nginx/TLS separately to proxy to 127.0.0.1:18080; host checks use 1.14.186.80.
 
-## 真实来源 IP 与限速
+Deploy TextRelay only responds to successful Check TextRelay push runs on main in Quashy/text-relay. No artifacts or code from the triggering run execute on the Actions runner. No checkout/setup actions are needed. GitHub concurrency and server flock serialize deployment; the wrapper rejects a SHA that is no longer origin/main, builds the exact archived commit, backs up SQLite via the running app CLI, then replaces the container. Initial deployment has no prior container to back up.
 
-应用默认不信任任何转发头。反代部署后设置 TRUSTED_PROXY 为应用实际看到的**已确认代理地址/CIDR**。宿主 Nginx 转发至 Docker 发布端口时可能看到 bridge 网关地址，不可盲设 loopback 或信任全部网段。先在隔离配置核实，代理覆盖 X-Forwarded-For，应用端口仅回环开放。Nginx 示例另设 IP 和全站入口预算，编码路径仍受应用路由限速保护。多用户共享出口 IP 的阈值根据实际量调整。
+The old image is retained as text-relay:rollback. Failed health checks attempt image rollback and exit unsuccessfully. SQLite is not automatically restored: image rollback cannot undo schema changes or post-deployment writes. For incompatible migrations, stop and plan an operator-led recovery using the named-volume backup. Backups and release directories are retained; operator retention is required to prevent disk exhaustion. This is a brief-downtime single-container deployment, not zero-downtime.
 
-应用健康检查需带配置域名的 Host。代理必须保留 Host。HTTP 只做转 HTTPS 或证书校验；HSTS 在核验证书续期和本站影响后启用。
+The key authorizes deployment of current main; server-side checks enforce main identity, while successful-CI gating is enforced by the workflow. Protect main, workflow changes, secrets and operator access. A compromised deployment key could request current main without checking CI itself. Repository Dockerfile code is built with the Docker daemon; the trust boundary is approved main, not a sandbox for malicious repository maintainers.
 
-## 保持 CI/CD 简单
-
-当前 .github/workflows/ci.yml 是无秘密的 CI：安装锁文件 → 类型检查 → API → 构建 → Chromium → 依赖审计 → Docker 构建。PR 和分支均不接触生产凭据，也不上传产物。Actions 是否在 GitHub 实际运行，需下一步推送后验证。
-
-后续接通 CD 时保留一个工作流，main push 且检查全通过后：
-1. 构建目标服务器架构镜像，标签为提交 SHA。
-2. 经固定主机指纹和受限部署入口传输镜像，不授予普通 shell 或全主机 Docker 控制权。
-3. 取得项目发布锁，拒绝过时发布，迁移前一致性备份。
-4. 只更新 TextRelay 容器，健康及 HTTPS 冒烟通过再记录成功。
-5. 失败保留旧服务；仅在 schema 兼容时回滚镜像，数据库恢复另按演练步骤处理。
-
-并发组 cancel-in-progress:false，加服务器发布序号防旧构建覆盖新版本。不使用 pull_request_target。秘密仅置于受控 GitHub environment/Secrets，不写进 YAML 或仓库。当前没有为未知目标写一个假装可直接运行的生产部署步骤。
-
-## GitHub 交接
-
-本地 Git 已准备；不调用 gh auth login、不创建 origin、不 push。用户参与时先确认账号/归属，再运行 GitHub CLI 的设备登录流程，由 CLI 实际返回地址与当次验证码；不预先生成会过期的设备码。然后检查暂存内容、建立公共仓库并按用户批准范围推送。
+Validation: bash syntax checks can run locally. Actual GitHub Actions execution is blocked by the account billing lock; do not bypass that lock or treat configuration as a verified automatic deployment. Neither server installation nor end-to-end rollout is implied by these files.
