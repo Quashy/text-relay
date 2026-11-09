@@ -1,11 +1,12 @@
 ARG NODE_IMAGE=node:24-bookworm-slim
-FROM ${NODE_IMAGE} AS build
+ARG NODE_BUILD_IMAGE=node:24-bookworm
+FROM ${NODE_BUILD_IMAGE} AS build
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN python3 --version && make --version && g++ --version
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build && npm prune --omit=dev
+RUN npm run build && npm test && npm prune --omit=dev
 
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATABASE_PATH=/app/data/textrelay.db COOKIE_SECURE=true

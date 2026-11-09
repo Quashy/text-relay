@@ -21,6 +21,10 @@ if [[ -f "$base/build.env" ]]; then
   source "$base/build.env"
   [[ ${NODE_IMAGE:-} =~ ^[a-zA-Z0-9./:@_-]+$ ]] || exit 66
   build_args+=(--build-arg "NODE_IMAGE=$NODE_IMAGE")
+  if [[ -n ${NODE_BUILD_IMAGE:-} ]]; then
+    [[ $NODE_BUILD_IMAGE =~ ^[a-zA-Z0-9./:@_-]+$ ]] || exit 66
+    build_args+=(--build-arg "NODE_BUILD_IMAGE=$NODE_BUILD_IMAGE")
+  fi
 fi
 docker build "${build_args[@]}" --tag "text-relay:$sha" "$release"
 export APP_VERSION="$sha"
