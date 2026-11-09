@@ -23,6 +23,7 @@ import {
   Trash2,
   LoaderCircle,
   ShieldCheck,
+  Github,
 } from 'lucide-react';
 import type { Share, ShareList } from '../shared/types';
 import './style.css';
@@ -62,6 +63,21 @@ function Brand() {
     </a>
   );
 }
+function RepositoryLink() {
+  return (
+    <a
+      className="github-link"
+      href="https://github.com/Quashy/text-relay"
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="GitHub 仓库（在新标签页打开）"
+      title="GitHub 仓库（在新标签页打开）"
+    >
+      <Github size={18} aria-hidden="true" />
+      <span className="link-label">GitHub</span>
+    </a>
+  );
+}
 function Spinner() {
   return <LoaderCircle className="spin" size={17} />;
 }
@@ -69,9 +85,10 @@ function Footer() {
   return (
     <footer>
       <span>少一点步骤，多一点连接。</span>
-      <span>
-        TextRelay <span className="footer-dot">·</span> 让文字轻松抵达
-      </span>
+      <div className="footer-links">
+        <span>TextRelay · 让文字轻松抵达</span>
+        <RepositoryLink />
+      </div>
     </footer>
   );
 }
@@ -123,83 +140,90 @@ function Public() {
     <div className="public-layout">
       <header className="site-header">
         <Brand />
-        <a className="subtle-link" href="/manage">
-          管理后台 <ArrowUpRight size={15} />
-        </a>
+        <nav className="header-nav" aria-label="主要导航">
+          <RepositoryLink />
+          <a className="subtle-link" href="/manage">
+            管理后台 <ArrowUpRight size={15} aria-hidden="true" />
+          </a>
+        </nav>
       </header>
       <main className={body === null ? 'landing' : 'reading'}>
         {body === null ? (
           <>
-            <div className="eyebrow">
-              <span className="live-dot" /> A SMALL CODE. A SIMPLE CONNECTION.
+            <div className="landing-copy">
+              <div className="eyebrow">
+                <span className="live-dot" /> A SMALL CODE. A SIMPLE CONNECTION.
+              </div>
+              <h1>
+                让文字，
+                <br />
+                <span>轻松抵达。</span>
+              </h1>
+              <p className="intro">
+                无需账号，无需多余步骤。
+                <br />
+                输入四位访问码，接收属于你的那段文字。
+              </p>
             </div>
-            <h1>
-              让文字，
-              <br />
-              <span>轻松抵达。</span>
-            </h1>
-            <p className="intro">
-              无需账号，无需多余步骤。
-              <br />
-              输入四位访问码，接收属于你的那段文字。
-            </p>
-            <section className="access-card">
-              <div className="card-caption">
-                <span>接收一段文字</span>
-                <span className="caption-step">01 / RECEIVE</span>
-              </div>
-              <form onSubmit={submit}>
-                <label htmlFor="access-code">
-                  访问码 <span>区分大小写</span>
-                </label>
-                <div className={'code-field ' + (error ? 'invalid' : '')}>
-                  <KeyRound size={21} />
-                  <input
-                    id="access-code"
-                    name="code"
-                    value={code}
-                    onChange={(e) => {
-                      setCode(e.target.value);
-                      setError('');
-                    }}
-                    placeholder="Ab12"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    autoComplete="off"
-                    maxLength={100}
-                    aria-describedby="code-hint"
-                    aria-invalid={!!error}
-                  />
-                  <span>4 位</span>
+            <div className="landing-access">
+              <section className="access-card">
+                <div className="card-caption">
+                  <span>接收一段文字</span>
+                  <span className="caption-step">01 / RECEIVE</span>
                 </div>
-                <p id="code-hint" className="field-hint">
-                  由英文字母与数字组成，保留原有大小写
-                </p>
-                <button className="primary wide" disabled={busy}>
-                  {busy ? (
-                    <Spinner />
-                  ) : (
-                    <>
-                      查看内容 <ArrowRight size={18} />
-                    </>
-                  )}
-                </button>
-                <div className="error" role="alert">
-                  {error}
+                <form onSubmit={submit}>
+                  <label htmlFor="access-code">
+                    访问码 <span>区分大小写</span>
+                  </label>
+                  <div className={'code-field ' + (error ? 'invalid' : '')}>
+                    <KeyRound size={21} />
+                    <input
+                      id="access-code"
+                      name="code"
+                      value={code}
+                      onChange={(e) => {
+                        setCode(e.target.value);
+                        setError('');
+                      }}
+                      placeholder="Ab12"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="off"
+                      maxLength={100}
+                      aria-describedby="code-hint"
+                      aria-invalid={!!error}
+                    />
+                    <span>4 位</span>
+                  </div>
+                  <p id="code-hint" className="field-hint">
+                    由英文字母与数字组成，保留原有大小写
+                  </p>
+                  <button className="primary wide" disabled={busy}>
+                    {busy ? (
+                      <Spinner />
+                    ) : (
+                      <>
+                        查看内容 <ArrowRight size={18} />
+                      </>
+                    )}
+                  </button>
+                  <div className="error" role="alert">
+                    {error}
+                  </div>
+                </form>
+                <div className="card-bottom">
+                  <ShieldCheck size={15} />
+                  <span>只显示与你的访问码对应的内容</span>
                 </div>
-              </form>
-              <div className="card-bottom">
-                <ShieldCheck size={15} />
-                <span>只显示与你的访问码对应的内容</span>
+              </section>
+              <div className="landing-note">
+                <span>01 输入访问码</span>
+                <i />
+                <span>02 查看文字</span>
+                <i />
+                <span>03 一键复制</span>
               </div>
-            </section>
-            <div className="landing-note">
-              <span>01 输入访问码</span>
-              <i />
-              <span>02 查看文字</span>
-              <i />
-              <span>03 一键复制</span>
             </div>
           </>
         ) : (
@@ -376,9 +400,12 @@ function Manage() {
       <div className="public-layout">
         <header className="site-header">
           <Brand />
-          <a href="/" className="subtle-link">
-            <ArrowLeft size={15} /> 返回首页
-          </a>
+          <nav className="header-nav" aria-label="主要导航">
+            <RepositoryLink />
+            <a href="/" className="subtle-link">
+              <ArrowLeft size={15} aria-hidden="true" /> 返回首页
+            </a>
+          </nav>
         </header>
         <main className="login-main">
           <div className="eyebrow">YOUR WORDS, WELL ORGANIZED.</div>
@@ -434,6 +461,7 @@ function Manage() {
         <Brand />
         <span className="workspace-label">文字工作台</span>
         <div className="account">
+          <RepositoryLink />
           <span>
             <span className="avatar">{user.charAt(0).toUpperCase()}</span>
             <span className="account-name">{user}</span>

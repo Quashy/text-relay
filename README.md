@@ -1,5 +1,7 @@
 # TextRelay
 
+[在线使用](https://1.14.186.80/) · [管理后台](https://1.14.186.80/manage) · [GitHub 仓库](https://github.com/Quashy/text-relay)
+
 **让文字，轻松抵达。**
 
 TextRelay 是一个轻巧的纯文本分享工具。给同事一个四位访问码，他们就能在同一个首页打开文字、保留原有格式并一键复制，无需注册账号。
