@@ -1,0 +1,38 @@
+# Example only: review the existing server topology first.
+# Place uniquely named zones in the http {} context, once.
+limit_req_zone $binary_remote_addr zone=textrelay_share_ip:1m rate=6r/m;
+limit_req_zone $server_name zone=textrelay_share_all:1m rate=60r/m;
+limit_req_zone $binary_remote_addr zone=textrelay_login_ip:1m rate=5r/m;
+limit_req_zone $server_name zone=textrelay_login_all:1m rate=20r/m;
+
+server {
+    listen 443 ssl;
+    server_name share.example.com;
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+    client_max_body_size 512k;
+    limit_req_status 429;
+
+    # Access logging never includes bodies. Queries/codes are unnecessary.
+    access_log off;
+    error_page 429 = @textrelay_rate_limit;
+    location @textrelay_rate_limit {
+        default_type application/json;
+        add_header Retry-After 15 always;
+        add_header Cache-Control no-store always;
+        return 429 '{"message":"操作较频繁，请稍后重试"}';
+    }
+    location = /api/share/resolve {
+        limit_req zone=textrelay_share_ip burst=3 nodelay;
+        limit_req zone=textrelay_share_all burst=10 nodelay;
+        include /path/to/textrelay-proxy.conf;
+    }
+    location = /api/auth/login {
+        limit_req zone=textrelay_login_ip burst=3 nodelay;
+        limit_req zone=textrelay_login_all burst=5 nodelay;
+        include /path/to/textrelay-proxy.conf;
+    }
+    location / {
+        include /path/to/textrelay-proxy.conf;
+    }
+}

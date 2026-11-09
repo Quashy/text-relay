@@ -1,0 +1,26 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> text-relay@1.0.0 test:e2e
+> playwright test
+
+[2m[WebServer] [22m(node:132) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mnpm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+[2m[WebServer] [22m(node:145) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:157) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:157) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/browser/flows.spec.ts:28:1 › desktop public reading, exact clipboard and safe plain-text rendering (638ms)
+  ✓  2 tests/browser/flows.spec.ts:86:1 › desktop admin create, edit, search, toggle, rotate, reuse and delete (3.2s)
+  ✓  3 tests/browser/flows.spec.ts:184:1 › mobile layout, full-screen editor and keyboard dialog focus (1.2s)
+  ✓  4 tests/browser/flows.spec.ts:231:1 › search ignores stale replies after a newer query (2.4s)
+  ✓  5 tests/browser/flows.spec.ts:254:1 › narrow screen has no overflow, clipboard fallback, invalid code feedback (420ms)
+  ✓  6 tests/browser/flows.spec.ts:295:1 › a delayed mutation reload uses the current search filters (2.5s)
+  ✓  7 tests/browser/flows.spec.ts:323:1 › password change revokes sessions and logout returns to the login page (2.3s)
+
+  7 passed (14.8s)

@@ -1,0 +1,1 @@
+PASS: interactive CLI initialization and password reset in PTY; backup CLI integrity/SHA-256 manifest. Temporary credentials/databases removed.

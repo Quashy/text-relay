@@ -1,0 +1,19 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> text-relay@1.0.0 build
+> npm run typecheck && vite build && tsc -p tsconfig.server.json
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> text-relay@1.0.0 typecheck
+> tsc --noEmit && tsc -p tsconfig.server.json --noEmit
+
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 1578 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/client/index.html                   0.52 kB │ gzip:  0.39 kB
+dist/client/assets/index-Drw1PzCY.css   19.34 kB │ gzip:  5.14 kB
+dist/client/assets/index-DSBYwPlR.js   248.65 kB │ gzip: 77.70 kB
+✓ built in 1.62s

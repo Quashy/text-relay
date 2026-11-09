@@ -1,0 +1,29 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> text-relay@1.0.0 test
+> node --import tsx --test tests/*.test.ts
+
+✔ all management endpoints require authentication (563.030876ms)
+✔ source checks, content type, custom header and Host are enforced (3.896697ms)
+✔ canonical routed paths protect encoded URLs and query suffixes (37.781402ms)
+✔ exact case-sensitive four-character codes, leading zeros, body preservation (19.329427ms)
+✔ unique code race allows exactly one writer; disabled codes stay reserved (11.303174ms)
+✔ rotation/deletion release old codes immediately and reject stale versions (11.874883ms)
+✔ UTF-8 byte limit, empty body/title, request shape and SQL input boundaries (15.337349ms)
+✔ search matches title/body substrings and exact case-sensitive code; pagination (22.105028ms)
+✔ cookie properties, digest-only storage, logout, password revocation, expiry (1375.532564ms)
+✔ rate limiting counts malformed/successful attempts, resists spoofed XFF, global budget (1206.864713ms)
+✔ WAL backup restoration, migrations are idempotent, public reading can be paused (44.44033ms)
+✔ SQLITE_BUSY returns retryable error without changing data (1490.915149ms)
+✔ trusted proxy is explicit and untrusted forwarding headers cannot affect budgets (29.363546ms)
+✔ password reset wins against an in-flight login using the former password (536.856282ms)
+Local inject 5-way resolve P95: 25.29ms (50 requests)
+✔ five concurrent resolutions remain below 500ms P95 in the local API benchmark (43.211003ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5907.698357
