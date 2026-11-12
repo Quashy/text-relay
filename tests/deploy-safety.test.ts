@@ -74,3 +74,49 @@ recover_failed_deployment`;
   assert.match(result.stderr, /Cannot confirm the failed app stopped/);
   assert.doesNotMatch(result.stderr, /COMPOSE:run |COMPOSE:up /);
 });
+
+const fetchRelease = source
+  .split('# BEGIN VERIFIED SOURCE FETCH\n')[1]
+  .split('# END VERIFIED SOURCE FETCH')[0];
+for (const scenario of ['success', 'stale main', 'download failure', 'invalid archive'] as const) {
+  test(`verified source archive: ${scenario}`, () => {
+    const program = `set -euo pipefail
+base=$(mktemp -d /tmp/textrelay-source-test.XXXXXX)
+[[ "$base" == /tmp/textrelay-source-test.* ]]
+trap 'rm -rf -- "$base"' EXIT
+mkdir -p "$base/releases" "$base/fixture/text-relay-commit"
+printf 'verified fixture' > "$base/fixture/text-relay-commit/verified.txt"
+tar -czf "$base/fixture.tar.gz" -C "$base/fixture" text-relay-commit
+sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+curl() {
+  local url="\${!#}" output= arg
+  if [[ "$url" == https://api.github.com/repos/Quashy/text-relay/git/ref/heads/main ]]; then
+    printf '%s' '{"object":{"sha":"${scenario === 'stale main' ? 'b'.repeat(40) : 'a'.repeat(40)}"}}'
+    return
+  fi
+  echo ARCHIVE_REQUEST >&2
+  [[ "$url" == "https://codeload.github.com/Quashy/text-relay/tar.gz/$sha" ]] || return 24
+  ${scenario === 'download failure' ? 'return 22' : ''}
+  while (($#)); do
+    if [[ "$1" == --output ]]; then output=$2; shift; fi
+    shift
+  done
+  ${scenario === 'invalid archive' ? 'printf invalid > "$output"' : 'cp "$base/fixture.tar.gz" "$output"'}
+}
+${fetchRelease}
+fetch_release
+[[ $(cat "$release/verified.txt") == 'verified fixture' ]]
+[[ -z $(find "$base/releases" -maxdepth 1 -name 'source-*.tar.gz' -print) ]]
+echo VERIFIED_SOURCE_READY
+`;
+    const result = spawnSync(bash, ['-s'], { input: program, encoding: 'utf8' });
+    assert.equal(
+      result.status,
+      scenario === 'success' ? 0 : scenario === 'stale main' ? 65 : 68,
+      result.stderr,
+    );
+    if (scenario === 'success') assert.match(result.stdout, /VERIFIED_SOURCE_READY/);
+    else assert.doesNotMatch(result.stdout, /VERIFIED_SOURCE_READY/);
+    if (scenario === 'stale main') assert.doesNotMatch(result.stderr, /ARCHIVE_REQUEST/);
+  });
+}

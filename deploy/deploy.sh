@@ -6,14 +6,31 @@ unset BASH_ENV ENV CDPATH GIT_DIR GIT_WORK_TREE DOCKER_HOST DOCKER_CONTEXT
 [[ $# == 1 && $1 =~ ^[0-9a-f]{40}$ ]] || { echo "Expected one lowercase commit SHA" >&2; exit 64; }
 sha=$1
 base=/opt/text-relay
-repo=$base/repo
 exec 9>/run/lock/text-relay-deploy.lock
 flock -w 900 9
 cd "$base"
-git -C "$repo" -c core.hooksPath=/dev/null fetch --no-tags https://github.com/Quashy/text-relay.git +refs/heads/main:refs/remotes/origin/main
-[[ $(git -C "$repo" rev-parse refs/remotes/origin/main) == "$sha" ]] || { echo "Commit is no longer main" >&2; exit 65; }
-release=$(mktemp -d "$base/releases/$sha.XXXXXX")
-git -C "$repo" archive "$sha" | tar -x -C "$release"
+# BEGIN VERIFIED SOURCE FETCH
+fetch_release() {
+  local current archive
+  current=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+    https://api.github.com/repos/Quashy/text-relay/git/ref/heads/main \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["object"]["sha"])')
+  [[ "$current" == "$sha" ]] || { echo "Commit is no longer main" >&2; return 65; }
+  release=$(mktemp -d "$base/releases/$sha.XXXXXX")
+  archive=$(mktemp "$base/releases/source-$sha.XXXXXX.tar.gz")
+  if ! curl --fail --location --silent --show-error --connect-timeout 10 --max-time 90 \
+    --output "$archive" "https://codeload.github.com/Quashy/text-relay/tar.gz/$sha"; then
+    rm -f -- "$archive"
+    return 68
+  fi
+  if ! tar --extract --gzip --no-same-owner --strip-components=1 --file "$archive" --directory "$release"; then
+    rm -f -- "$archive"
+    return 68
+  fi
+  rm -f -- "$archive"
+}
+# END VERIFIED SOURCE FETCH
+fetch_release
 build_args=()
 if [[ -f "$base/build.env" ]]; then
   # Operator-owned shell configuration, never copied from the repository.
