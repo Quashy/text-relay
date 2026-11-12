@@ -102,7 +102,12 @@ async function login(page: any) {
   await expect(page.getByRole('heading', { name: '文字分享.' })).toBeVisible();
   await expect(page.locator('.share-row')).toHaveCount(4);
 }
-test('desktop admin create, edit, search, toggle, rotate, reuse and delete', async ({ page }) => {
+test('desktop admin create, edit, search, toggle, rotate, reuse and delete', async ({
+  page,
+  context,
+}) => {
+  // This CRUD flow assumes copying succeeds; denied-copy fallback has dedicated coverage.
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await login(page);
   await settleMotion(page);
