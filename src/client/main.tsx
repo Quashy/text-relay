@@ -31,6 +31,7 @@ import './style.css';
 import { api } from './api';
 import Dialog from './Dialog';
 import Users from './Users';
+import { shareMessage, copyShareText, copyCreatedShare } from './shareClipboard';
 
 function Mark() {
   return (
@@ -287,6 +288,22 @@ function Manage() {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(''),
     [toast, setToast] = useState('');
+  const [copyFallback, setCopyFallback] = useState<{ text: string; created: boolean } | null>(null);
+  const copySequence = useRef(0);
+  function reportCopy(text: string, result: Promise<boolean>, created = false) {
+    const sequence = ++copySequence.current;
+    if (created) setToast('分享已创建，正在复制链接和访问码…');
+    void result.then((copied) => {
+      if (sequence !== copySequence.current) return;
+      if (copied) {
+        setCopyFallback(null);
+        setToast(created ? '分享已创建，链接和访问码已复制' : '链接和访问码已复制');
+      } else {
+        setToast('');
+        setCopyFallback({ text, created });
+      }
+    });
+  }
   const requestSequence = useRef(0);
   const filters = useRef({ q, status, page });
   filters.current = { q, status, page };
@@ -599,14 +616,11 @@ function Manage() {
                       <code>{share.code}</code>
                       <button
                         className="icon-button small"
-                        aria-label={'复制访问码 ' + share.code}
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(share.code);
-                            setToast('访问码已复制');
-                          } catch {
-                            setError('复制未成功，请手动复制访问码');
-                          }
+                        aria-label={'复制分享链接和访问码 ' + share.code}
+                        title="复制分享链接和访问码"
+                        onClick={() => {
+                          const text = shareMessage(share.code);
+                          reportCopy(text, copyShareText(text));
                         }}
                       >
                         <Copy size={14} />
@@ -699,9 +713,10 @@ function Manage() {
         <Editor
           share={editor}
           close={() => setEditor(null)}
-          saved={() => {
+          saved={(created) => {
             setEditor(null);
-            setToast(editor === 'new' ? '分享已创建' : '更改已保存');
+            if (created) reportCopy(shareMessage(created.share.code), created.copied, true);
+            else setToast('更改已保存');
             void load();
           }}
         />
@@ -727,6 +742,17 @@ function Manage() {
           }}
         />
       )}
+      {copyFallback && (
+        <ShareCopyFallback
+          text={copyFallback.text}
+          created={copyFallback.created}
+          close={() => setCopyFallback(null)}
+          copied={() => {
+            setCopyFallback(null);
+            setToast('链接和访问码已复制');
+          }}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           <Check size={17} />
@@ -737,6 +763,81 @@ function Manage() {
   );
 }
 
+type CreatedShare = { share: Share; copied: Promise<boolean> };
+
+function ShareCopyFallback({
+  text,
+  created,
+  close,
+  copied,
+}: {
+  text: string;
+  created: boolean;
+  close: () => void;
+  copied: () => void;
+}) {
+  const field = useRef<HTMLTextAreaElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const selectText = () => {
+    field.current?.focus();
+    field.current?.select();
+  };
+  useEffect(selectText, []);
+  return (
+    <Dialog
+      label="复制分享信息"
+      close={close}
+      descriptionId="share-copy-description"
+      className="share-copy-dialog"
+    >
+      <div className="share-copy-heading">
+        <h2>{created ? '分享已创建' : '复制分享信息'}</h2>
+        <button className="icon-button" onClick={close} aria-label="关闭复制窗口">
+          <X size={19} />
+        </button>
+      </div>
+      <p id="share-copy-description" className="modal-description">
+        未能写入剪贴板。请重试，或选中下方文字手动复制。
+      </p>
+      <textarea
+        className="input share-copy-text"
+        ref={field}
+        value={text}
+        readOnly
+        rows={3}
+        aria-label="手动复制分享信息"
+        data-dialog-initial-focus
+        spellCheck={false}
+      />
+      <p className="field-hint" role="status">
+        {message}
+      </p>
+      <div className="modal-buttons">
+        <button className="secondary" onClick={selectText}>
+          全选文字
+        </button>
+        <button
+          className="primary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            const success = await copyShareText(text);
+            setBusy(false);
+            if (success) copied();
+            else {
+              setMessage('复制仍未成功，请手动复制下方已选文字。');
+              selectText();
+            }
+          }}
+        >
+          {busy ? '正在复制…' : '重试复制'}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
 function Editor({
   share,
   close: onClose,
@@ -744,7 +845,7 @@ function Editor({
 }: {
   share: Share | 'new';
   close: () => void;
-  saved: () => void;
+  saved: (created?: CreatedShare) => void;
 }) {
   const existing = share !== 'new';
   const [exiting, setExiting] = useState(false);
@@ -755,7 +856,7 @@ function Editor({
     setExiting(true);
   };
   const close = () => dismiss(onClose);
-  const saved = () => dismiss(onSaved);
+  const saved = (created?: CreatedShare) => dismiss(() => onSaved(created));
   const [title, setTitle] = useState(existing ? share.title : ''),
     [body, setBody] = useState(existing ? share.body : ''),
     [code, setCode] = useState(''),
@@ -788,7 +889,18 @@ function Editor({
           { title, body, enabled, version: share.version },
           'PATCH',
         );
-      else await api('/admin/shares', { title, body, enabled, ...(manual ? { code } : {}) });
+      else {
+        const creation = api<Share>('/admin/shares', {
+          title,
+          body,
+          enabled,
+          ...(manual ? { code } : {}),
+        });
+        const copied = copyCreatedShare(creation);
+        const created = await creation;
+        saved({ share: created, copied });
+        return;
+      }
       saved();
     } catch (e) {
       setError((e as Error).message);

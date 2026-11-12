@@ -2085,3 +2085,18 @@ dialog[data-nested]::backdrop {
     max-width: none;
   }
 }
+
+.share-copy-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.share-copy-text {
+  width: 100%;
+  margin-top: 18px;
+  min-height: 110px;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
