@@ -30,3 +30,16 @@ schema 2 不兼容旧应用。镜像回滚不能撤销数据库迁移；旧单�
 备份含密码哈希和分享正文，留在服务器私有备份卷，不提交 Git。旧会话被撤销是预期行为，并非数据丢失。
 
 参考：[SQLite 外键](https://www.sqlite.org/foreignkeys.html)、[OWASP 授权](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)、[OWASP 会话管理](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)。
+
+## 部署失败保护与恢复演练
+
+`deploy/deploy.sh` 在替换容器前读取 schema 并通过当前运行版本备份。启动或健康检查失败后先停止失败实例，通过一次性只读 Node 进程查询结构；仅当迁移前后 schema 已知且相同时才回退镜像。schema 改变、查询失败或无法停止实例时禁止自动回退，保留数据库及备份，返回失败供操作者处理。根拥有的 `/usr/local/sbin/textrelay-deploy` 需要单独安装审核后的脚本，提交仓库不会自动替换它。
+
+2026-11-12 在服务器使用 `/tmp` 合成数据完成实际故障演练，未写入生产数据卷：
+
+1. 建立 v1 账号和分享，创建 v1 快照；运行实际 v2 迁移并增加一条迁移后写入。
+2. 占用临时本机端口，确认实际新程序因 `EADDRINUSE` 启动失败。
+3. 保存故障 v2 快照，确认其中仍有迁移后新增写入；实际已安装旧程序无法使用 v2 数据库登录。
+4. 将 v1 快照恢复到独立临时路径，搭配实际旧程序，确认登录、私有分享列表和原公开分享码访问全部恢复；故障 v2 快照中的新增写入保持可查。
+
+该演练验证了匹配恢复的可行性，不代表旧备份会自动包含迁移后写入。恢复生产前必须先封存故障库并处理增量数据。部署脚本自动测试覆盖同版本回退、已完成迁移后的启动失败、查询异常、异常版本、未知原版本、首次部署以及停止失败。生产预迁移备份 `pre-multiuser-20261112T030623.db` 已再次验证 SHA-256 一致、`integrity_check=ok`、schema=1、原有分享 2 条；备份内容保持私有。
