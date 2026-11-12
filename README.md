@@ -44,7 +44,7 @@ npm run admin -- init
 npm start
 ```
 
-打开 http://localhost:3000 。初始化命令会交互询问账号和密码，不提供默认账号。密码至少 12 个字符；命令行中不需要填写密码。
+打开 http://localhost:3000 。初始化命令会交互询问账号和密码，不提供默认账号。密码至少 6 个字符；命令行中不需要填写密码。
 
 [开发与测试](docs/development.md) · [自部署](docs/deployment.md) · [备份与恢复](docs/backup-restore.md) · [验收记录](docs/acceptance.md)
 

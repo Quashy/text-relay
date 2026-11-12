@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { openDb } from '../../src/server/db.js';
 import { hashPassword } from '../../src/server/security.js';
 import { settleMotion } from './motion';
-const password = 'user-browser-test-password';
+const password = '123456';
 test.beforeAll(async () => {
   const db = openDb('./data/acceptance.db');
   db.exec('DROP TRIGGER IF EXISTS protect_superadmin_identity');
@@ -37,6 +37,17 @@ test('superadmin user management, colleague private workspace, account edits and
   const form = page.getByRole('dialog', { name: '新建用户', exact: true });
   await expect(page.locator('#account-username')).toBeFocused();
   await page.locator('#account-username').fill('colleague-test');
+  await expect(page.locator('#account-password')).toHaveAttribute('minlength', '6');
+  await page.locator('#account-password').fill('12345');
+  await page.locator('#account-confirm').fill('12345');
+  expect(
+    await page
+      .locator('#account-password')
+      .evaluate((input: HTMLInputElement) => input.validity.tooShort),
+  ).toBe(true);
+  await form.getByRole('button', { name: '保存用户', exact: true }).click();
+  await expect(form).toBeVisible();
+  await expect(page.locator('.user-row')).toHaveCount(1);
   await page.locator('#account-password').fill(password);
   await page.locator('#account-confirm').fill(password);
   await form.getByRole('button', { name: '保存用户', exact: true }).click();
@@ -67,8 +78,15 @@ test('superadmin user management, colleague private workspace, account edits and
   await page.getByRole('button', { name: '用户管理', exact: true }).click();
   await row.getByRole('button', { name: '编辑用户', exact: true }).click();
   await page.locator('#account-username').fill('colleague-renamed');
-  await page.locator('#account-password').fill('changed-colleague-password');
-  await page.locator('#account-confirm').fill('changed-colleague-password');
+  await page.locator('#account-password').fill('12345');
+  await page.locator('#account-confirm').fill('12345');
+  expect(
+    await page
+      .locator('#account-password')
+      .evaluate((input: HTMLInputElement) => input.validity.tooShort),
+  ).toBe(true);
+  await page.locator('#account-password').fill('654321');
+  await page.locator('#account-confirm').fill('654321');
   await page
     .getByRole('dialog', { name: '编辑用户', exact: true })
     .getByRole('button', { name: '保存用户', exact: true })
@@ -76,7 +94,7 @@ test('superadmin user management, colleague private workspace, account edits and
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await colleague.reload();
   await expect(colleague.locator('.login-card')).toBeVisible();
-  await login(colleague, 'colleague-renamed', 'changed-colleague-password');
+  await login(colleague, 'colleague-renamed', '654321');
   await expect(colleague.locator('.share-row')).toHaveCount(1);
   await page.setViewportSize({ width: 320, height: 900 });
   await settleMotion(page);

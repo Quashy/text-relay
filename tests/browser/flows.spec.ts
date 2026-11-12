@@ -235,12 +235,21 @@ test('password change revokes sessions and logout returns to the login page', as
   await login(page);
   await page.getByRole('button', { name: '修改密码', exact: true }).click();
   await page.getByLabel('当前密码', { exact: true }).fill(password);
-  await page.getByLabel('新密码（至少 12 位）', { exact: true }).fill('new-browser-test-password');
-  await page.getByLabel('再次输入新密码', { exact: true }).fill('new-browser-test-password');
+  const nextPassword = page.getByLabel('新密码（至少 6 位）', { exact: true });
+  await expect(nextPassword).toHaveAttribute('minlength', '6');
+  await nextPassword.fill('12345');
+  await page.getByLabel('再次输入新密码', { exact: true }).fill('12345');
+  expect(await nextPassword.evaluate((input: HTMLInputElement) => input.validity.tooShort)).toBe(
+    true,
+  );
+  await page.getByRole('button', { name: '保存密码' }).click();
+  await expect(nextPassword).toBeVisible();
+  await page.getByLabel('新密码（至少 6 位）', { exact: true }).fill('654321');
+  await page.getByLabel('再次输入新密码', { exact: true }).fill('654321');
   await page.getByRole('button', { name: '保存密码' }).click();
   await expect(page.getByRole('alert')).toContainText('密码已更新');
   await page.getByLabel('账号', { exact: true }).fill('test-owner');
-  await page.getByLabel('密码', { exact: true }).fill('new-browser-test-password');
+  await page.getByLabel('密码', { exact: true }).fill('654321');
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('heading', { name: '文字分享.' })).toBeVisible();
   await page.getByRole('button', { name: '退出登录' }).click();

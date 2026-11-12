@@ -1120,14 +1120,14 @@ function Password({ close, done }: { close: () => void; done: () => void }) {
           required
           maxLength={256}
         />
-        <label htmlFor="new-password">新密码（至少 12 位）</label>
+        <label htmlFor="new-password">新密码（至少 6 位）</label>
         <input
           id="new-password"
           className="input"
           name="new"
           type="password"
           autoComplete="new-password"
-          minLength={12}
+          minLength={6}
           maxLength={256}
           required
         />

@@ -226,7 +226,7 @@ export async function createApp(o: Options) {
     '/api/auth/password',
     {
       schema: {
-        body: obj({ currentPassword: str(256), newPassword: str(256, 12) }, [
+        body: obj({ currentPassword: str(256), newPassword: str(256, 6) }, [
           'currentPassword',
           'newPassword',
         ]),
@@ -456,7 +456,7 @@ export async function createApp(o: Options) {
     '/api/admin/users',
     {
       schema: {
-        body: obj({ username: str(100), password: str(256, 12) }, ['username', 'password']),
+        body: obj({ username: str(100), password: str(256, 6) }, ['username', 'password']),
       },
     },
     async (req, reply) => {
@@ -479,7 +479,7 @@ export async function createApp(o: Options) {
   );
   app.patch(
     '/api/admin/users/:id',
-    { schema: { body: obj({ username: str(100), password: str(256, 12), version }, ['version']) } },
+    { schema: { body: obj({ username: str(100), password: str(256, 6), version }, ['version']) } },
     async (req, reply) => {
       const id = userId(req);
       if (id === 1) return bad(reply, 403, '最高管理员账号受保护，请通过修改密码管理自己的密码');

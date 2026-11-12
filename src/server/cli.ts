@@ -62,8 +62,8 @@ try {
     rl.close();
     if (command === 'init' && (!username || username.length > 100))
       throw Error('用户名需要 1–100 个字符');
-    const password = await secret('设置密码（12–256 个字符，不回显）：');
-    if (password.length < 12 || password.length > 256) throw Error('密码长度需要 12–256 个字符');
+    const password = await secret('设置密码（6–256 个字符，不回显）：');
+    if (password.length < 6 || password.length > 256) throw Error('密码长度需要 6–256 个字符');
     if (password !== (await secret('再次输入密码：'))) throw Error('两次密码不一致');
     const hash = await hashPassword(password);
     db.transaction(() => {

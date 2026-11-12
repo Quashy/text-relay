@@ -266,12 +266,12 @@ function AccountEditor({
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          minLength={12}
+          minLength={6}
           maxLength={256}
           autoComplete="new-password"
           required={!existing}
         />
-        <p className="field-hint">密码需要 12–256 个字符</p>
+        <p className="field-hint">密码需要 6–256 个字符</p>
         <label htmlFor="account-confirm">再次输入密码</label>
         <input
           id="account-confirm"
