@@ -33,7 +33,16 @@ const query = obj({
   q: str(200, 0),
   status: { type: 'string', enum: ['all', 'enabled', 'disabled'] },
 });
-const toShare = (r: Row): Share => ({ ...r, enabled: !!r.enabled });
+const toShare = (r: Row): Share => ({
+  id: r.id,
+  title: r.title,
+  body: r.body,
+  code: r.code,
+  enabled: !!r.enabled,
+  version: r.version,
+  created_at: r.created_at,
+  updated_at: r.updated_at,
+});
 export async function createApp(o: Options) {
   const db = o.db,
     now = o.now ?? Date.now;
@@ -55,6 +64,19 @@ export async function createApp(o: Options) {
     httpOnly: true,
     sameSite: 'strict' as const,
     secure: o.secure ?? true,
+  };
+  type Identity = { id: number; username: string; role: 'superadmin' | 'user'; expires_at: number };
+  const identity = (req: any): Identity | undefined => {
+    const token = req.cookies.tr_session_v2;
+    return token
+      ? (db
+          .prepare(
+            `SELECT u.id,u.username,u.role,s.expires_at
+      FROM user_sessions s JOIN users u ON u.id=s.user_id
+      WHERE s.token_hash=? AND s.expires_at>?`,
+          )
+          .get(digest(token), now()) as Identity | undefined)
+      : undefined;
   };
   const shareIp = new Limiter(6, 3, now),
     shareAll = new Limiter(60, 10, now),
@@ -98,13 +120,23 @@ export async function createApp(o: Options) {
       route.startsWith('/api/admin/') ||
       ['/api/auth/session', '/api/auth/logout', '/api/auth/password'].includes(route)
     ) {
-      const token = req.cookies.tr_session;
-      const session =
-        token &&
-        db
-          .prepare('SELECT expires_at FROM sessions WHERE token_hash=? AND expires_at>?')
-          .get(digest(token), now());
-      if (!session) return bad(reply, 401, '请先登录管理员账号');
+      const user = identity(req);
+      if (!user) return bad(reply, 401, '请先登录账号');
+      if (route.startsWith('/api/admin/users') && user.role !== 'superadmin')
+        return bad(reply, 403, '仅最高管理员可以管理用户');
+    }
+  });
+  // Revalidate after body parsing/validation too; never rely on an earlier cached role.
+  app.addHook('preHandler', async (req, reply) => {
+    const route = req.routeOptions.url ?? '';
+    if (
+      route.startsWith('/api/admin/') ||
+      ['/api/auth/session', '/api/auth/logout', '/api/auth/password'].includes(route)
+    ) {
+      const user = identity(req);
+      if (!user) return bad(reply, 401, '请先登录账号');
+      if (route.startsWith('/api/admin/users') && user.role !== 'superadmin')
+        return bad(reply, 403, '仅最高管理员可以管理用户');
     }
   });
   app.setErrorHandler((error, req, reply) => {
@@ -113,7 +145,14 @@ export async function createApp(o: Options) {
       return bad(reply, 400, '输入格式不正确，请检查后重试');
     if (err.statusCode === 413) return bad(reply, 413, '内容过长，请缩短后重试');
     const code = (err as Error & { code?: string }).code;
-    if (code === 'SQLITE_CONSTRAINT_UNIQUE') return bad(reply, 409, '访问码已被占用，请换一个');
+    if (code === 'SQLITE_CONSTRAINT_UNIQUE')
+      return bad(
+        reply,
+        409,
+        req.routeOptions.url?.startsWith('/api/admin/users')
+          ? '用户名已存在'
+          : '访问码已被占用，请换一个',
+      );
     if (code === 'SQLITE_BUSY') return bad(reply, 503, '服务繁忙，请稍后重试');
     req.log.error({ err: { name: err.name, code } }, 'Request failed');
     return bad(reply, 503, '服务暂时不可用，请稍后重试');
@@ -142,42 +181,45 @@ export async function createApp(o: Options) {
     { schema: { body: obj({ username: str(100), password: str(256) }, ['username', 'password']) } },
     async (req, reply) => {
       const { username, password } = req.body as { username: string; password: string };
-      const admin = db.prepare('SELECT * FROM admin WHERE id=1').get() as
-        | { username: string; password_hash: string }
+      const admin = db
+        .prepare('SELECT * FROM users WHERE username=? COLLATE NOCASE')
+        .get(username) as
+        | { id: number; username: string; password_hash: string; version: number; role: string }
         | undefined;
       // Compute the same expensive hash for unknown usernames.
       const hash = admin?.password_hash ?? (await hashPassword('unconfigured-account-placeholder'));
       const valid = await verifyPassword(password, hash);
-      if (!admin || admin.username !== username || !valid)
-        return bad(reply, 401, '账号或密码不正确');
+      if (!admin || !valid) return bad(reply, 401, '账号或密码不正确');
       const token = randomBytes(32).toString('hex'),
         expires = now() + 8 * 60 * 60 * 1000;
       const created = db.transaction(() => {
-        const current = db.prepare('SELECT password_hash FROM admin WHERE id=1').get() as
-          | { password_hash: string }
-          | undefined;
-        if (current?.password_hash !== hash) return false;
-        db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(now());
-        db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(digest(token), expires, now());
+        const current = db
+          .prepare('SELECT password_hash,version FROM users WHERE id=?')
+          .get(admin.id) as { password_hash: string; version: number } | undefined;
+        if (current?.password_hash !== hash || current.version !== admin.version) return false;
+        db.prepare('DELETE FROM user_sessions WHERE expires_at<=?').run(now());
+        db.prepare('INSERT INTO user_sessions VALUES(?,?,?,?)').run(
+          digest(token),
+          expires,
+          now(),
+          admin.id,
+        );
         return true;
       })();
       if (!created) return bad(reply, 401, '账号或密码已更新，请重新登录');
-      reply.setCookie('tr_session', token, { ...cookieOptions, maxAge: 8 * 60 * 60 });
-      return { username: admin.username, expires_at: expires };
+      reply.setCookie('tr_session_v2', token, { ...cookieOptions, maxAge: 8 * 60 * 60 });
+      return { username: admin.username, role: admin.role, expires_at: expires };
     },
   );
-  app.get('/api/auth/session', (req) => ({
-    username: (db.prepare('SELECT username FROM admin WHERE id=1').get() as { username: string })
-      .username,
-    expires_at: (
-      db
-        .prepare('SELECT expires_at FROM sessions WHERE token_hash=?')
-        .get(digest(req.cookies.tr_session!)) as { expires_at: number }
-    ).expires_at,
-  }));
+  app.get('/api/auth/session', (req) => {
+    const u = identity(req)!;
+    return { username: u.username, role: u.role, expires_at: u.expires_at };
+  });
   app.post('/api/auth/logout', async (req, reply) => {
-    db.prepare('DELETE FROM sessions WHERE token_hash=?').run(digest(req.cookies.tr_session!));
-    reply.clearCookie('tr_session', cookieOptions);
+    db.prepare('DELETE FROM user_sessions WHERE token_hash=?').run(
+      digest(req.cookies.tr_session_v2!),
+    );
+    reply.clearCookie('tr_session_v2', cookieOptions);
     return { ok: true };
   });
   app.post(
@@ -195,36 +237,39 @@ export async function createApp(o: Options) {
         currentPassword: string;
         newPassword: string;
       };
-      const admin = db.prepare('SELECT password_hash FROM admin WHERE id=1').get() as {
+      const logged = identity(req)!;
+      const admin = db.prepare('SELECT password_hash FROM users WHERE id=?').get(logged.id) as {
         password_hash: string;
       };
       if (!(await verifyPassword(currentPassword, admin.password_hash)))
         return bad(reply, 401, '当前密码不正确');
       const hash = await hashPassword(newPassword);
       const changed = db.transaction(() => {
-        const current = db.prepare('SELECT password_hash FROM admin WHERE id=1').get() as {
+        const current = db.prepare('SELECT password_hash FROM users WHERE id=?').get(logged.id) as {
           password_hash: string;
         };
         const session = db
-          .prepare('SELECT token_hash FROM sessions WHERE token_hash=? AND expires_at>?')
-          .get(digest(req.cookies.tr_session!), now());
-        if (current.password_hash !== admin.password_hash || !session) return false;
-        db.prepare('UPDATE admin SET password_hash=?,updated_at=? WHERE id=1').run(hash, now());
-        db.prepare('DELETE FROM sessions').run();
+          .prepare('SELECT token_hash FROM user_sessions WHERE token_hash=? AND expires_at>?')
+          .get(digest(req.cookies.tr_session_v2!), now());
+        if (!current || current.password_hash !== admin.password_hash || !session) return false;
+        db.prepare(
+          'UPDATE users SET password_hash=?,updated_at=?,version=version+1 WHERE id=?',
+        ).run(hash, now(), logged.id);
+        db.prepare('DELETE FROM user_sessions WHERE user_id=?').run(logged.id);
         return true;
       })();
       if (!changed) return bad(reply, 401, '登录状态已更新，请重新登录');
-      reply.clearCookie('tr_session', cookieOptions);
+      reply.clearCookie('tr_session_v2', cookieOptions);
       return { ok: true };
     },
   );
-  function list(data: { page?: number; q?: string; status?: string }) {
+  function list(owner: number, data: { page?: number; q?: string; status?: string }) {
     const requestedPage = data.page ?? 1,
       q = data.q ?? '',
       status = data.status ?? 'all';
     const where =
-      "WHERE (?='' OR instr(lower(title),lower(?))>0 OR instr(lower(body),lower(?))>0 OR code=? COLLATE BINARY) AND (?='all' OR enabled=?)";
-    const args = [q, q, q, q, status, status === 'enabled' ? 1 : 0];
+      "WHERE owner_id=? AND (?='' OR instr(lower(title),lower(?))>0 OR instr(lower(body),lower(?))>0 OR code=? COLLATE BINARY) AND (?='all' OR enabled=?)";
+    const args = [owner, q, q, q, q, status, status === 'enabled' ? 1 : 0];
     const total = (
       db.prepare('SELECT count(*) n FROM shares ' + where).get(...args) as { n: number }
     ).n;
@@ -237,13 +282,15 @@ export async function createApp(o: Options) {
   app.get(
     '/api/admin/shares',
     { schema: { querystring: obj({ page: { type: 'string', pattern: '^[1-9][0-9]{0,4}$' } }) } },
-    (req) => list({ page: Number((req.query as { page?: string }).page ?? 1) }),
+    (req) => list(identity(req)!.id, { page: Number((req.query as { page?: string }).page ?? 1) }),
   );
-  app.post('/api/admin/shares/search', { schema: { body: query } }, (req) => list(req.body as any));
+  app.post('/api/admin/shares/search', { schema: { body: query } }, (req) =>
+    list(identity(req)!.id, req.body as any),
+  );
   app.get('/api/admin/shares/:id', async (req, reply) => {
     const r = db
-      .prepare('SELECT * FROM shares WHERE id=?')
-      .get((req.params as { id: string }).id) as Row | undefined;
+      .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
+      .get((req.params as { id: string }).id, identity(req)!.id) as Row | undefined;
     return r ? toShare(r) : bad(reply, 404, '内容不存在');
   });
   const content = { title: str(120), body: str(102400), enabled: { type: 'boolean' } };
@@ -262,7 +309,7 @@ export async function createApp(o: Options) {
     return true;
   }
   const insert = db.prepare(
-    'INSERT INTO shares(id,title,body,code,enabled,version,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)',
+    'INSERT INTO shares(id,title,body,code,enabled,version,created_at,updated_at,owner_id) VALUES(?,?,?,?,?,1,?,?,?)',
   );
   app.post(
     '/api/admin/shares',
@@ -289,10 +336,17 @@ export async function createApp(o: Options) {
             +data.enabled,
             now(),
             now(),
+            identity(req)!.id,
           );
           return reply
             .code(201)
-            .send(toShare(db.prepare('SELECT * FROM shares WHERE id=?').get(id) as Row));
+            .send(
+              toShare(
+                db
+                  .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
+                  .get(id, identity(req)!.id) as Row,
+              ),
+            );
         } catch (e) {
           if (data.code || (e as any).code !== 'SQLITE_CONSTRAINT_UNIQUE') throw e;
         }
@@ -312,21 +366,26 @@ export async function createApp(o: Options) {
       if (!validateContent(data, reply)) return;
       return db.transaction(() => {
         const row = db
-          .prepare('SELECT * FROM shares WHERE id=?')
-          .get((req.params as { id: string }).id) as Row | undefined;
+          .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
+          .get((req.params as { id: string }).id, identity(req)!.id) as Row | undefined;
         if (!row) return bad(reply, 404, '内容不存在');
         if (row.version !== data.version)
           return bad(reply, 409, '内容已在其他窗口更新，请重新加载');
         db.prepare(
-          'UPDATE shares SET title=?,body=?,enabled=?,version=version+1,updated_at=? WHERE id=?',
+          'UPDATE shares SET title=?,body=?,enabled=?,version=version+1,updated_at=? WHERE id=? AND owner_id=?',
         ).run(
           data.title ?? row.title,
           data.body ?? row.body,
           data.enabled === undefined ? row.enabled : +data.enabled,
           now(),
           row.id,
+          identity(req)!.id,
         );
-        return toShare(db.prepare('SELECT * FROM shares WHERE id=?').get(row.id) as Row);
+        return toShare(
+          db
+            .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
+            .get(row.id, identity(req)!.id) as Row,
+        );
       })();
     },
   );
@@ -341,8 +400,8 @@ export async function createApp(o: Options) {
       const data = req.body as { code?: string; version: number };
       return db.transaction(() => {
         const row = db
-          .prepare('SELECT * FROM shares WHERE id=?')
-          .get((req.params as { id: string }).id) as Row | undefined;
+          .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
+          .get((req.params as { id: string }).id, identity(req)!.id) as Row | undefined;
         if (!row) return bad(reply, 404, '内容不存在');
         if (row.version !== data.version)
           return bad(reply, 409, '内容已在其他窗口更新，请重新加载');
@@ -351,12 +410,14 @@ export async function createApp(o: Options) {
           const code = data.code ?? randomCode();
           if (code === row.code) continue;
           try {
-            db.prepare('UPDATE shares SET code=?,version=version+1,updated_at=? WHERE id=?').run(
-              code,
-              now(),
-              row.id,
+            db.prepare(
+              'UPDATE shares SET code=?,version=version+1,updated_at=? WHERE id=? AND owner_id=?',
+            ).run(code, now(), row.id, identity(req)!.id);
+            return toShare(
+              db
+                .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
+                .get(row.id, identity(req)!.id) as Row,
             );
-            return toShare(db.prepare('SELECT * FROM shares WHERE id=?').get(row.id) as Row);
           } catch (e) {
             if (data.code || (e as any).code !== 'SQLITE_CONSTRAINT_UNIQUE') throw e;
           }
@@ -372,12 +433,90 @@ export async function createApp(o: Options) {
       const id = (req.params as { id: string }).id,
         { version: v } = req.body as { version: number };
       return db.transaction(() => {
-        const row = db.prepare('SELECT version FROM shares WHERE id=?').get(id) as
-          | { version: number }
-          | undefined;
+        const row = db
+          .prepare('SELECT version FROM shares WHERE id=? AND owner_id=?')
+          .get(id, identity(req)!.id) as { version: number } | undefined;
         if (!row) return bad(reply, 404, '内容不存在');
         if (row.version !== v) return bad(reply, 409, '内容已在其他窗口更新，请重新加载');
-        db.prepare('DELETE FROM shares WHERE id=?').run(id);
+        db.prepare('DELETE FROM shares WHERE id=? AND owner_id=?').run(id, identity(req)!.id);
+        return { ok: true };
+      })();
+    },
+  );
+  const userFields = 'id,username,role,version,created_at,updated_at';
+  const userId = (req: any) => Number(req.params.id);
+  app.get('/api/admin/users', () => ({
+    items: db.prepare(`SELECT ${userFields} FROM users ORDER BY id`).all(),
+  }));
+  app.get('/api/admin/users/:id', (req, reply) => {
+    const user = db.prepare(`SELECT ${userFields} FROM users WHERE id=?`).get(userId(req));
+    return user ?? bad(reply, 404, '用户不存在');
+  });
+  app.post(
+    '/api/admin/users',
+    {
+      schema: {
+        body: obj({ username: str(100), password: str(256, 12) }, ['username', 'password']),
+      },
+    },
+    async (req, reply) => {
+      const data = req.body as { username: string; password: string };
+      const username = data.username.trim();
+      if (!username) return bad(reply, 400, '请填写用户名');
+      const hash = await hashPassword(data.password);
+      const created = db.transaction(() => {
+        if (identity(req)?.role !== 'superadmin') return undefined;
+        const result = db
+          .prepare(
+            "INSERT INTO users(username,password_hash,role,created_at,updated_at) VALUES(?,?,'user',?,?)",
+          )
+          .run(username, hash, now(), now());
+        return db.prepare(`SELECT ${userFields} FROM users WHERE id=?`).get(result.lastInsertRowid);
+      })();
+      if (!created) return bad(reply, 401, '登录状态已更新，请重新登录');
+      return reply.code(201).send(created);
+    },
+  );
+  app.patch(
+    '/api/admin/users/:id',
+    { schema: { body: obj({ username: str(100), password: str(256, 12), version }, ['version']) } },
+    async (req, reply) => {
+      const id = userId(req);
+      if (id === 1) return bad(reply, 403, '最高管理员账号受保护，请通过修改密码管理自己的密码');
+      const data = req.body as { username?: string; password?: string; version: number };
+      if (data.username !== undefined && !data.username.trim())
+        return bad(reply, 400, '请填写用户名');
+      const hash = data.password === undefined ? undefined : await hashPassword(data.password);
+      return db.transaction(() => {
+        if (identity(req)?.role !== 'superadmin')
+          return bad(reply, 401, '登录状态已更新，请重新登录');
+        const row = db.prepare('SELECT * FROM users WHERE id=?').get(id) as
+          | { username: string; password_hash: string; version: number }
+          | undefined;
+        if (!row) return bad(reply, 404, '用户不存在');
+        if (row.version !== data.version) return bad(reply, 409, '账号已被更新，请重新加载');
+        db.prepare(
+          'UPDATE users SET username=?,password_hash=?,version=version+1,updated_at=? WHERE id=?',
+        ).run(data.username?.trim() ?? row.username, hash ?? row.password_hash, now(), id);
+        db.prepare('DELETE FROM user_sessions WHERE user_id=?').run(id);
+        return db.prepare(`SELECT ${userFields} FROM users WHERE id=?`).get(id);
+      })();
+    },
+  );
+  app.delete(
+    '/api/admin/users/:id',
+    { schema: { body: obj({ version }, ['version']) } },
+    (req, reply) => {
+      const id = userId(req);
+      if (id === 1) return bad(reply, 403, '不能删除最高管理员');
+      return db.transaction(() => {
+        const row = db.prepare('SELECT version FROM users WHERE id=?').get(id) as
+          | { version: number }
+          | undefined;
+        if (!row) return bad(reply, 404, '用户不存在');
+        if (row.version !== (req.body as { version: number }).version)
+          return bad(reply, 409, '账号已被更新，请重新加载');
+        db.prepare('DELETE FROM users WHERE id=?').run(id);
         return { ok: true };
       })();
     },

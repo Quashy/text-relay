@@ -21,7 +21,7 @@ const app = await createApp({
   logger: true,
 });
 const cleanup = setInterval(
-  () => db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(Date.now()),
+  () => db.prepare('DELETE FROM user_sessions WHERE expires_at<=?').run(Date.now()),
   60000,
 );
 cleanup.unref();

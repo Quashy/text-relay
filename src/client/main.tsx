@@ -28,25 +28,10 @@ import {
 } from 'lucide-react';
 import type { Share, ShareList } from '../shared/types';
 import './style.css';
-async function api<T>(path: string, body?: unknown, method?: string): Promise<T> {
-  const response = await fetch('/api' + path, {
-    method: method ?? (body === undefined ? 'GET' : 'POST'),
-    headers:
-      body === undefined ? {} : { 'Content-Type': 'application/json', 'X-TextRelay-Request': '1' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw Error('服务暂时不可用，请稍后重试');
-  }
-  if (!response.ok) {
-    if (response.status === 401 && path.startsWith('/admin/')) location.assign('/manage/login');
-    throw Error(data.message ?? '操作未完成，请重试');
-  }
-  return data;
-}
+import { api } from './api';
+import Dialog from './Dialog';
+import Users from './Users';
+
 function Mark() {
   return (
     <span className="brand-mark">
@@ -290,6 +275,8 @@ function Public() {
 function Manage() {
   const [checking, setChecking] = useState(true),
     [user, setUser] = useState(''),
+    [role, setRole] = useState<'superadmin' | 'user'>('user'),
+    [view, setView] = useState<'shares' | 'users'>('shares'),
     [auth, setAuth] = useState(false),
     [loginError, setLoginError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -307,9 +294,10 @@ function Manage() {
     [confirm, setConfirm] = useState<{ type: 'delete' | 'rotate'; share: Share } | null>(null),
     [password, setPassword] = useState(false);
   useEffect(() => {
-    api<{ username: string }>('/auth/session')
+    api<{ username: string; role: 'superadmin' | 'user' }>('/auth/session')
       .then((r) => {
         setUser(r.username);
+        setRole(r.role);
         setAuth(true);
         history.replaceState(null, '', '/manage');
       })
@@ -353,11 +341,12 @@ function Manage() {
     setBusy(true);
     setLoginError('');
     try {
-      const r = await api<{ username: string }>('/auth/login', {
+      const r = await api<{ username: string; role: 'superadmin' | 'user' }>('/auth/login', {
         username: f.get('username'),
         password: f.get('password'),
       });
       setUser(r.username);
+      setRole(r.role);
       setAuth(true);
       history.replaceState(null, '', '/manage');
     } catch (e) {
@@ -416,7 +405,7 @@ function Manage() {
           <p className="intro">登录后，继续管理你的文字分享。</p>
           <section className="access-card login-card">
             <div className="card-caption">
-              管理员登录 <KeyRound size={18} />
+              账号登录 <KeyRound size={18} />
             </div>
             <form onSubmit={login}>
               <label htmlFor="username">账号</label>
@@ -481,202 +470,229 @@ function Manage() {
         </div>
       </header>
       <main className="dashboard">
-        <div className="dashboard-top">
-          <div>
-            <div className="eyebrow">YOUR TEXT LIBRARY</div>
-            <h1>
-              文字分享<span className="brand-dot">.</span>
-            </h1>
-            <p>整理文字，分享灵感，让每段内容都有自己的入口。</p>
-          </div>
-          <button className="primary" onClick={() => setEditor('new')}>
-            <Plus size={18} />
-            新建分享
-          </button>
-        </div>
-        <div className="library-toolbar">
-          <div className="tabs" role="group" aria-label="分享状态">
-            {[
-              ['all', '全部分享'],
-              ['enabled', '已启用'],
-              ['disabled', '已停用'],
-            ].map(([v, label]) => (
-              <button
-                className={status === v ? 'active' : ''}
-                key={v}
-                onClick={() => {
-                  setStatus(v);
-                  setPage(1);
-                }}
-              >
-                {label}
-                {status === v && <span>{list.total}</span>}
-              </button>
-            ))}
-          </div>
-          <label className="search-box">
-            <Search size={17} />
-            <input
-              placeholder="搜索标题、正文或完整访问码"
-              aria-label="搜索分享"
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setPage(1);
-              }}
-            />
-            {q && (
-              <button aria-label="清空搜索" className="icon-button" onClick={() => setQ('')}>
-                <X size={15} />
-              </button>
-            )}
-          </label>
-        </div>
-        {error && (
-          <p className="notice error" role="alert">
-            {error}
-          </p>
+        {role === 'superadmin' && (
+          <nav className="workspace-nav" aria-label="工作区">
+            <button
+              className={view === 'shares' ? 'active' : ''}
+              aria-current={view === 'shares' ? 'page' : undefined}
+              onClick={() => setView('shares')}
+            >
+              我的分享
+            </button>
+            <button
+              className={view === 'users' ? 'active' : ''}
+              aria-current={view === 'users' ? 'page' : undefined}
+              onClick={() => setView('users')}
+            >
+              用户管理
+            </button>
+          </nav>
         )}
-        <section className="library">
-          <div className="table-head">
-            <span>内容</span>
-            <span>访问码</span>
-            <span>状态</span>
-            <span>更新时间</span>
-            <span>操作</span>
-          </div>
-          {loading ? (
-            <div className="empty">
-              <Spinner />
-              <p>正在整理文字…</p>
+        {view === 'users' && role === 'superadmin' ? (
+          <Users />
+        ) : (
+          <>
+            <div className="dashboard-top">
+              <div>
+                <div className="eyebrow">YOUR TEXT LIBRARY</div>
+                <h1>
+                  文字分享<span className="brand-dot">.</span>
+                </h1>
+                <p>整理文字，分享灵感，让每段内容都有自己的入口。</p>
+              </div>
+              <button className="primary" onClick={() => setEditor('new')}>
+                <Plus size={18} />
+                新建分享
+              </button>
             </div>
-          ) : list.items.length === 0 ? (
-            <div className="empty">
-              <span className="empty-icon">
-                <FileText size={29} />
-              </span>
-              <h2>{q ? '没有找到相关文字' : '让第一段文字出发'}</h2>
-              <p>
-                {q ? '换个关键词，或试试完整访问码。' : '创建一个分享，让接收者用四位码轻松打开。'}
-              </p>
-              {!q && (
-                <button className="secondary" onClick={() => setEditor('new')}>
-                  <Plus size={16} />
-                  新建分享
-                </button>
-              )}
-            </div>
-          ) : (
-            list.items.map((share) => (
-              <article
-                className={'share-row ' + (!share.enabled ? 'disabled-row' : '')}
-                key={share.id}
-              >
-                <button className="share-content" onClick={() => setEditor(share)}>
-                  <span className="file-icon">
-                    <FileText size={21} />
-                  </span>
-                  <span>
-                    <strong>{share.title}</strong>
-                    <small>{share.body.replace(/\s+/g, ' ').slice(0, 80)}</small>
-                  </span>
-                </button>
-                <div className="row-code">
-                  <span className="mobile-label">访问码</span>
-                  <code>{share.code}</code>
+            <div className="library-toolbar">
+              <div className="tabs" role="group" aria-label="分享状态">
+                {[
+                  ['all', '全部分享'],
+                  ['enabled', '已启用'],
+                  ['disabled', '已停用'],
+                ].map(([v, label]) => (
                   <button
-                    className="icon-button small"
-                    aria-label={'复制访问码 ' + share.code}
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(share.code);
-                        setToast('访问码已复制');
-                      } catch {
-                        setError('复制未成功，请手动复制访问码');
-                      }
+                    className={status === v ? 'active' : ''}
+                    key={v}
+                    onClick={() => {
+                      setStatus(v);
+                      setPage(1);
                     }}
                   >
-                    <Copy size={14} />
+                    {label}
+                    {status === v && <span>{list.total}</span>}
                   </button>
+                ))}
+              </div>
+              <label className="search-box">
+                <Search size={17} />
+                <input
+                  placeholder="搜索标题、正文或完整访问码"
+                  aria-label="搜索分享"
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    setPage(1);
+                  }}
+                />
+                {q && (
+                  <button aria-label="清空搜索" className="icon-button" onClick={() => setQ('')}>
+                    <X size={15} />
+                  </button>
+                )}
+              </label>
+            </div>
+            {error && (
+              <p className="notice error" role="alert">
+                {error}
+              </p>
+            )}
+            <section className="library">
+              <div className="table-head">
+                <span>内容</span>
+                <span>访问码</span>
+                <span>状态</span>
+                <span>更新时间</span>
+                <span>操作</span>
+              </div>
+              {loading ? (
+                <div className="empty">
+                  <Spinner />
+                  <p>正在整理文字…</p>
                 </div>
-                <button
-                  onClick={() => void toggle(share)}
-                  className={'status-pill ' + (share.enabled ? 'enabled' : '')}
-                  aria-label={(share.enabled ? '停用' : '启用') + share.title}
-                >
-                  <span />
-                  {share.enabled ? '已启用' : '已停用'}
-                </button>
-                <time>
-                  {new Date(share.updated_at).toLocaleDateString('zh-CN', {
-                    month: '2-digit',
-                    day: '2-digit',
-                  })}
-                  <small>
-                    {new Date(share.updated_at).toLocaleTimeString('zh-CN', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </small>
-                </time>
-                <div className="row-actions">
-                  <button className="edit-button" onClick={() => setEditor(share)}>
-                    编辑 <ArrowUpRight size={14} />
-                  </button>
+              ) : list.items.length === 0 ? (
+                <div className="empty">
+                  <span className="empty-icon">
+                    <FileText size={29} />
+                  </span>
+                  <h2>{q ? '没有找到相关文字' : '让第一段文字出发'}</h2>
+                  <p>
+                    {q
+                      ? '换个关键词，或试试完整访问码。'
+                      : '创建一个分享，让接收者用四位码轻松打开。'}
+                  </p>
+                  {!q && (
+                    <button className="secondary" onClick={() => setEditor('new')}>
+                      <Plus size={16} />
+                      新建分享
+                    </button>
+                  )}
+                </div>
+              ) : (
+                list.items.map((share) => (
+                  <article
+                    className={'share-row ' + (!share.enabled ? 'disabled-row' : '')}
+                    key={share.id}
+                  >
+                    <button className="share-content" onClick={() => setEditor(share)}>
+                      <span className="file-icon">
+                        <FileText size={21} />
+                      </span>
+                      <span>
+                        <strong>{share.title}</strong>
+                        <small>{share.body.replace(/\s+/g, ' ').slice(0, 80)}</small>
+                      </span>
+                    </button>
+                    <div className="row-code">
+                      <span className="mobile-label">访问码</span>
+                      <code>{share.code}</code>
+                      <button
+                        className="icon-button small"
+                        aria-label={'复制访问码 ' + share.code}
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(share.code);
+                            setToast('访问码已复制');
+                          } catch {
+                            setError('复制未成功，请手动复制访问码');
+                          }
+                        }}
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => void toggle(share)}
+                      className={'status-pill ' + (share.enabled ? 'enabled' : '')}
+                      aria-label={(share.enabled ? '停用' : '启用') + share.title}
+                    >
+                      <span />
+                      {share.enabled ? '已启用' : '已停用'}
+                    </button>
+                    <time>
+                      {new Date(share.updated_at).toLocaleDateString('zh-CN', {
+                        month: '2-digit',
+                        day: '2-digit',
+                      })}
+                      <small>
+                        {new Date(share.updated_at).toLocaleTimeString('zh-CN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </small>
+                    </time>
+                    <div className="row-actions">
+                      <button className="edit-button" onClick={() => setEditor(share)}>
+                        编辑 <ArrowUpRight size={14} />
+                      </button>
+                      <button
+                        className="icon-button"
+                        aria-label={'换码 ' + share.title}
+                        title="更换访问码"
+                        onClick={() => setConfirm({ type: 'rotate', share })}
+                      >
+                        <Shuffle size={16} />
+                      </button>
+                      <button
+                        className="icon-button danger"
+                        aria-label={'删除 ' + share.title}
+                        title="删除分享"
+                        onClick={() => setConfirm({ type: 'delete', share })}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+              <div className="table-footer">
+                <span>
+                  共 {list.total} 段文字 <span className="footer-dot">·</span>{' '}
+                  每一段，都值得被妥善传递
+                </span>
+                <div className="pagination">
                   <button
                     className="icon-button"
-                    aria-label={'换码 ' + share.title}
-                    title="更换访问码"
-                    onClick={() => setConfirm({ type: 'rotate', share })}
+                    aria-label="上一页"
+                    disabled={page <= 1}
+                    onClick={() => setPage(page - 1)}
                   >
-                    <Shuffle size={16} />
+                    <ChevronLeft size={16} />
                   </button>
+                  <span>
+                    {page} / {list.pages}
+                  </span>
                   <button
-                    className="icon-button danger"
-                    aria-label={'删除 ' + share.title}
-                    title="删除分享"
-                    onClick={() => setConfirm({ type: 'delete', share })}
+                    className="icon-button"
+                    aria-label="下一页"
+                    disabled={page >= list.pages}
+                    onClick={() => setPage(page + 1)}
                   >
-                    <Trash2 size={16} />
+                    <ChevronRight size={16} />
                   </button>
                 </div>
-              </article>
-            ))
-          )}
-          <div className="table-footer">
-            <span>
-              共 {list.total} 段文字 <span className="footer-dot">·</span> 每一段，都值得被妥善传递
-            </span>
-            <div className="pagination">
-              <button
-                className="icon-button"
-                aria-label="上一页"
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span>
-                {page} / {list.pages}
-              </span>
-              <button
-                className="icon-button"
-                aria-label="下一页"
-                disabled={page >= list.pages}
-                onClick={() => setPage(page + 1)}
-              >
-                <ChevronRight size={16} />
-              </button>
+              </div>
+            </section>
+            <div className="workspace-note">
+              <Radio size={15} />
+              <span>分享始于一段文字，连接只需四位代码。</span>
+              <a href="/" target="_blank" rel="noreferrer">
+                打开接收首页 <ArrowUpRight size={14} />
+              </a>
             </div>
-          </div>
-        </section>
-        <div className="workspace-note">
-          <Radio size={15} />
-          <span>分享始于一段文字，连接只需四位代码。</span>
-          <a href="/" target="_blank" rel="noreferrer">
-            打开接收首页 <ArrowUpRight size={14} />
-          </a>
-        </div>
+          </>
+        )}
       </main>
       <Footer />
       {editor && (
@@ -720,107 +736,7 @@ function Manage() {
     </div>
   );
 }
-let dialogCount = 0;
-let originalBodyOverflow = '';
-function Dialog({
-  children,
-  close,
-  label,
-  drawer = false,
-  className = '',
-  exiting = false,
-  onExited,
-  descriptionId,
-}: {
-  children: React.ReactNode;
-  close: () => void;
-  label: string;
-  drawer?: boolean;
-  className?: string;
-  exiting?: boolean;
-  onExited?: () => void;
-  descriptionId?: string;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const [nested] = useState(() => dialogCount > 0);
-  const exitCallback = useRef(onExited);
-  exitCallback.current = onExited;
-  useEffect(() => {
-    const el = ref.current!,
-      previousFocus = document.activeElement as HTMLElement | null;
-    if (dialogCount === 0) originalBodyOverflow = document.body.style.overflow;
-    dialogCount++;
-    document.body.style.overflow = 'hidden';
-    el.showModal();
-    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-    if (!drawer && !reduced.matches) {
-      el.animate(
-        [
-          { opacity: 0, transform: 'translateY(8px) scale(0.99)' },
-          { opacity: 1, transform: 'none' },
-        ],
-        { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
-      );
-    }
-    const stopMotion = () => {
-      if (reduced.matches) el.getAnimations().forEach((a) => a.cancel());
-    };
-    reduced.addEventListener('change', stopMotion);
-    el.querySelector<HTMLElement>('[data-dialog-initial-focus]')?.focus();
-    return () => {
-      reduced.removeEventListener('change', stopMotion);
-      el.getAnimations().forEach((a) => a.cancel());
-      el.close();
-      dialogCount--;
-      if (dialogCount === 0) document.body.style.overflow = originalBodyOverflow;
-      if (previousFocus?.isConnected) previousFocus.focus();
-    };
-  }, []);
-  useEffect(() => {
-    if (!exiting) return;
-    const el = ref.current!;
-    let active = true;
-    const current = getComputedStyle(el);
-    const start = { opacity: current.opacity, transform: current.transform };
-    el.getAnimations()
-      .filter((a) => !(a instanceof CSSAnimation))
-      .forEach((a) => a.cancel());
-    const animation = matchMedia('(prefers-reduced-motion: reduce)').matches
-      ? null
-      : el.animate([start, { opacity: '0', transform: 'translateY(4px) scale(0.995)' }], {
-          duration: 150,
-          easing: 'ease-out',
-          fill: 'forwards',
-        });
-    Promise.allSettled(animation ? [animation.finished] : []).then(() => {
-      if (active) exitCallback.current?.();
-    });
-    return () => {
-      active = false;
-      animation?.cancel();
-    };
-  }, [exiting]);
-  return (
-    <dialog
-      className={`${drawer ? 'drawer' : 'modal'} ${className}`.trim()}
-      ref={ref}
-      aria-label={label}
-      aria-describedby={descriptionId}
-      data-nested={nested || undefined}
-      data-exiting={exiting || undefined}
-      onCancel={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        if (!exiting) close();
-      }}
-      onClick={(e) => {
-        if (!exiting && e.target === e.currentTarget) close();
-      }}
-    >
-      {children}
-    </dialog>
-  );
-}
+
 function Editor({
   share,
   close: onClose,

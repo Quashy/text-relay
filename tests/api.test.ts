@@ -50,7 +50,9 @@ async function create(
   return r.json();
 }
 before(async () => {
-  db.prepare('INSERT INTO admin VALUES(1,?,?,?)').run('owner', await hashPassword(password), clock);
+  db.prepare(
+    "INSERT INTO users(id,username,password_hash,role,created_at,updated_at) VALUES(1,?,?,'superadmin',0,?)",
+  ).run('owner', await hashPassword(password), clock);
   cookie = await login();
 });
 after(async () => {
@@ -299,8 +301,8 @@ test('cookie properties, digest-only storage, logout, password revocation, expir
   assert.doesNotMatch(set, /Domain=/);
   const second = set.split(';')[0],
     token = second.split('=')[1];
-  assert.ok(db.prepare('SELECT * FROM sessions WHERE token_hash=?').get(digest(token)));
-  assert.equal(db.prepare('SELECT * FROM sessions WHERE token_hash=?').get(token), undefined);
+  assert.ok(db.prepare('SELECT * FROM user_sessions WHERE token_hash=?').get(digest(token)));
+  assert.equal(db.prepare('SELECT * FROM user_sessions WHERE token_hash=?').get(token), undefined);
   assert.equal(
     (await request('POST', '/api/auth/logout', {}, true, { cookie: second })).statusCode,
     200,
@@ -399,7 +401,12 @@ test('WAL backup restoration, migrations are idempotent, public reading can be p
     backup = join(dir, 'backup.sqlite');
   const source = openDb(path);
   source
-    .prepare('INSERT INTO shares VALUES(?,?,?,?,?,1,?,?)')
+    .prepare(
+      "INSERT INTO users(id,username,password_hash,role,created_at,updated_at) VALUES(1,'backup-owner','test','superadmin',0,0)",
+    )
+    .run();
+  source
+    .prepare('INSERT INTO shares VALUES(?,?,?,?,?,1,?,?,1)')
     .run('test', 'backup', 'preserve\n  whitespace', 'Bk01', 1, clock, clock);
   await source.backup(backup);
   source.close();
@@ -409,7 +416,7 @@ test('WAL backup restoration, migrations are idempotent, public reading can be p
     (restored.prepare('SELECT body FROM shares').get() as any).body,
     'preserve\n  whitespace',
   );
-  assert.equal((restored.prepare('SELECT count(*) n FROM schema_migrations').get() as any).n, 1);
+  assert.equal((restored.prepare('SELECT count(*) n FROM schema_migrations').get() as any).n, 2);
   const paused = await createApp({ db: restored, origin, rateLimit: false, publicRead: false });
   const r = await paused.inject({
     method: 'POST',
@@ -428,7 +435,9 @@ test('SQLITE_BUSY returns retryable error without changing data', async () => {
     one = openDb(path),
     two = new Database(path);
   one
-    .prepare('INSERT INTO admin VALUES(1,?,?,?)')
+    .prepare(
+      "INSERT INTO users(id,username,password_hash,role,created_at,updated_at) VALUES(1,?,?,'superadmin',0,?)",
+    )
     .run('owner', await hashPassword(password), clock);
   const busy = await createApp({
     db: one,
@@ -486,7 +495,11 @@ test('trusted proxy is explicit and untrusted forwarding headers cannot affect b
 test('password reset wins against an in-flight login using the former password', async () => {
   const isolated = openDb(':memory:');
   const hash = await hashPassword(password);
-  isolated.prepare('INSERT INTO admin VALUES(1,?,?,?)').run('owner', hash, clock);
+  isolated
+    .prepare(
+      "INSERT INTO users(id,username,password_hash,role,created_at,updated_at) VALUES(1,?,?,'superadmin',0,?)",
+    )
+    .run('owner', hash, clock);
   const service = await createApp({
     db: isolated,
     origin,
@@ -498,13 +511,13 @@ test('password reset wins against an in-flight login using the former password',
   let reset = false;
   isolated.prepare = ((sql: string) => {
     const stmt = prepare(sql);
-    if (sql === 'SELECT * FROM admin WHERE id=1') {
+    if (sql === 'SELECT * FROM users WHERE username=? COLLATE NOCASE') {
       const get = stmt.get.bind(stmt);
       stmt.get = ((...args: unknown[]) => {
         const row = get(...args);
         queueMicrotask(() => {
-          prepare('UPDATE admin SET password_hash=? WHERE id=1').run('revoked');
-          prepare('DELETE FROM sessions').run();
+          prepare('UPDATE users SET password_hash=? WHERE id=1').run('revoked');
+          prepare('DELETE FROM user_sessions').run();
           reset = true;
         });
         return row;
@@ -520,7 +533,7 @@ test('password reset wins against an in-flight login using the former password',
   });
   assert.equal(reset, true);
   assert.equal(result.statusCode, 401);
-  assert.equal((prepare('SELECT count(*) n FROM sessions').get() as any).n, 0);
+  assert.equal((prepare('SELECT count(*) n FROM user_sessions').get() as any).n, 0);
   await service.close();
   isolated.close();
 });

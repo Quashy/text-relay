@@ -1992,3 +1992,96 @@ dialog[data-nested]::backdrop {
     width: 100%;
   }
 }
+
+.workspace-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.workspace-nav button {
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.workspace-nav button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.user-notice {
+  color: var(--success);
+  font-size: 14px;
+  margin-block: 16px;
+}
+.user-notice:empty {
+  display: none;
+}
+.user-list {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--canvas);
+}
+.user-row {
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.user-row:last-child {
+  border-bottom: 0;
+}
+.user-identity {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+}
+.user-identity strong {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+.user-identity p {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 8px;
+  line-height: 1.6;
+}
+.user-actions,
+.protected-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.protected-user {
+  color: var(--muted);
+  font-size: 12px;
+}
+.user-loading {
+  padding: 32px;
+  color: var(--muted);
+}
+.account-dialog {
+  width: 520px;
+}
+.account-dialog .error:not(:empty) {
+  margin-top: 16px;
+}
+@media (max-width: 760px) {
+  .user-row {
+    padding: 20px;
+    flex-wrap: wrap;
+  }
+  .user-actions {
+    margin-inline-start: auto;
+  }
+  .users-page .dashboard-top p {
+    max-width: none;
+  }
+}

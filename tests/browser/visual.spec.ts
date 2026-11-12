@@ -5,14 +5,15 @@ import { hashPassword } from '../../src/server/security.js';
 const password = 'contrast-test-only-password';
 test.beforeAll(async () => {
   const db = openDb('./data/acceptance.db');
-  db.prepare('DELETE FROM sessions').run();
-  db.prepare('INSERT OR REPLACE INTO admin VALUES(1,?,?,?)').run(
+  db.exec('DROP TRIGGER IF EXISTS protect_superadmin_identity');
+  db.prepare('DELETE FROM user_sessions').run();
+  db.prepare('UPDATE users SET username=?,password_hash=?,updated_at=? WHERE id=1').run(
     'contrast-owner',
     await hashPassword(password),
     Date.now(),
   );
   db.prepare('DELETE FROM shares').run();
-  db.prepare('INSERT INTO shares VALUES(?,?,?,?,?,1,?,?)').run(
+  db.prepare('INSERT INTO shares VALUES(?,?,?,?,?,1,?,?,1)').run(
     'contrast-fixture',
     'Contrast sample',
     'A plain text sample',

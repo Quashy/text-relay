@@ -9,15 +9,14 @@ const body =
   '  项目协作小记\n\n1. 保留每一次换行。\n2. 让文字轻松抵达。\n\t<script>window.hacked=true</script>  \n';
 test.beforeAll(async () => {
   const db = openDb('./data/acceptance.db');
-  db.prepare('DELETE FROM sessions').run();
-  db.prepare('DELETE FROM admin').run();
+  db.exec('DROP TRIGGER IF EXISTS protect_superadmin_identity');
+  db.prepare('DELETE FROM user_sessions').run();
+  db.prepare('DELETE FROM users WHERE id<>1').run();
   db.prepare('DELETE FROM shares').run();
-  db.prepare('INSERT INTO admin VALUES(1,?,?,?)').run(
-    'test-owner',
-    await hashPassword(password),
-    Date.now(),
-  );
-  const insert = db.prepare('INSERT INTO shares VALUES(?,?,?,?,?,1,?,?)');
+  db.prepare(
+    "INSERT INTO users(id,username,password_hash,role,created_at,updated_at) VALUES(1,?,?,'superadmin',0,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,password_hash=excluded.password_hash,updated_at=excluded.updated_at",
+  ).run('test-owner', await hashPassword(password), Date.now());
+  const insert = db.prepare('INSERT INTO shares VALUES(?,?,?,?,?,1,?,?,1)');
   const samples = [
     ['项目协作小记', body, 'Ab12', 1],
     ['一段写给周一的灵感', '把复杂的事讲清楚，把简单的事做好。\n\n每一小步，都算数。', 'R7k2', 1],
@@ -36,8 +35,8 @@ test.beforeAll(async () => {
 });
 test.afterAll(() => {
   const db = openDb('./data/acceptance.db');
-  db.prepare('DELETE FROM sessions').run();
-  db.prepare('DELETE FROM admin').run();
+  db.prepare('DELETE FROM user_sessions').run();
+  db.prepare('DELETE FROM users WHERE id<>1').run();
   db.close();
 });
 test('desktop public reading, exact clipboard and safe plain-text rendering', async ({

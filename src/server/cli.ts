@@ -1,3 +1,4 @@
+import BackupDatabase from 'better-sqlite3';
 import { openDb } from './db.js';
 import { hashPassword } from './security.js';
 import { createInterface } from 'node:readline/promises';
@@ -10,8 +11,13 @@ try {
 } catch (e) {
   if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
 }
-const db = openDb(process.env.DATABASE_PATH ?? './data/textrelay.db');
 const command = process.argv[2];
+const databasePath = process.env.DATABASE_PATH ?? './data/textrelay.db';
+// Backups must never perform a schema migration before taking the snapshot.
+const db =
+  command === 'backup'
+    ? new BackupDatabase(databasePath, { readonly: true, fileMustExist: true })
+    : openDb(databasePath);
 async function secret(prompt: string): Promise<string> {
   if (!stdin.isTTY) throw Error('密码必须在交互终端输入，不接受命令行或重定向');
   stdout.write(prompt);
@@ -48,7 +54,7 @@ async function secret(prompt: string): Promise<string> {
 }
 try {
   if (command === 'init' || command === 'reset') {
-    const exists = !!db.prepare('SELECT id FROM admin WHERE id=1').get();
+    const exists = !!db.prepare('SELECT id FROM users WHERE id=1').get();
     if (command === 'init' && exists) throw Error('管理员已存在；重置请使用 reset');
     if (command === 'reset' && !exists) throw Error('管理员尚未初始化');
     const rl = createInterface({ input: stdin, output: stdout });
@@ -62,13 +68,15 @@ try {
     const hash = await hashPassword(password);
     db.transaction(() => {
       if (command === 'init')
-        db.prepare('INSERT INTO admin VALUES(1,?,?,?)').run(username, hash, Date.now());
+        db.prepare(
+          "INSERT INTO users(id,username,password_hash,role,created_at,updated_at) VALUES(1,?,?,'superadmin',0,?)",
+        ).run(username, hash, Date.now());
       else
-        db.prepare('UPDATE admin SET password_hash=?,updated_at=? WHERE id=1').run(
+        db.prepare('UPDATE users SET password_hash=?,updated_at=? WHERE id=1').run(
           hash,
           Date.now(),
         );
-      db.prepare('DELETE FROM sessions').run();
+      db.prepare('DELETE FROM user_sessions').run();
     })();
     console.log('管理员已更新，所有旧会话已失效。');
   } else if (command === 'backup') {
@@ -90,7 +98,14 @@ try {
     writeFileSync(
       target + '.json',
       JSON.stringify(
-        { created_at: new Date().toISOString(), sha256: sha, schema: 1, app_version: '1.0.0' },
+        {
+          created_at: new Date().toISOString(),
+          sha256: sha,
+          schema: (
+            db.prepare('SELECT max(version) AS v FROM schema_migrations').get() as { v: number }
+          ).v,
+          app_version: '1.0.0',
+        },
         null,
         2,
       ),
@@ -98,7 +113,7 @@ try {
     );
     console.log('已生成一致性快照：' + target);
   } else if (command === 'clear-sessions') {
-    db.prepare('DELETE FROM sessions').run();
+    db.prepare('DELETE FROM user_sessions').run();
     console.log('旧会话已清除。');
   } else
     throw Error(
