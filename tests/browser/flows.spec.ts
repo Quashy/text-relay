@@ -108,7 +108,7 @@ test('desktop admin create, edit, search, toggle, rotate, reuse and delete', asy
   await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/manage-desktop.png', fullPage: true });
   await page.getByRole('button', { name: '新建分享', exact: true }).first().click();
-  await page.getByLabel('标题 仅在后台显示').fill('验收用分享');
+  await page.getByLabel('标题 随分享信息复制').fill('验收用分享');
   await page.getByRole('textbox', { name: /^正文/ }).fill('original\n  body');
   await page.getByRole('button', { name: '自定义', exact: true }).click();
   await page.getByLabel('访问码 四位字母或数字，区分大小写').fill('Ui01');
@@ -149,7 +149,7 @@ test('mobile layout, centered editor and keyboard dialog focus', async ({ page }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: '新建分享', exact: true }).first().click();
   await expect(page.getByRole('dialog', { name: '新建分享' })).toBeVisible();
-  await page.getByLabel('标题 仅在后台显示').fill('手机测试');
+  await page.getByLabel('标题 随分享信息复制').fill('手机测试');
   await settleMotion(page);
   await page.screenshot({ path: 'docs/evidence/editor-mobile.png', fullPage: false });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

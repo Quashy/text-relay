@@ -619,7 +619,7 @@ function Manage() {
                         aria-label={'复制分享链接和访问码 ' + share.code}
                         title="复制分享链接和访问码"
                         onClick={() => {
-                          const text = shareMessage(share.code);
+                          const text = shareMessage(share);
                           reportCopy(text, copyShareText(text));
                         }}
                       >
@@ -715,7 +715,7 @@ function Manage() {
           close={() => setEditor(null)}
           saved={(created) => {
             setEditor(null);
-            if (created) reportCopy(shareMessage(created.share.code), created.copied, true);
+            if (created) reportCopy(shareMessage(created.share), created.copied, true);
             else setToast('更改已保存');
             void load();
           }}
@@ -938,7 +938,7 @@ function Editor({
         <div className="drawer-body">
           <div className="editor-content">
             <label htmlFor="title">
-              标题 <span>仅在后台显示</span>
+              标题 <span>随分享信息复制</span>
             </label>
             <input
               id="title"

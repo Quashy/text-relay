@@ -41,7 +41,8 @@ async function prepare(page: any, manual?: string) {
     await page.locator('#new-code').fill(manual);
   }
 }
-const message = (code: string) => `地址：http://localhost:3000/\n访问码：${code}`;
+const message = (code: string, title = 'New copied share') =>
+  `标题：${title}\n地址：http://localhost:3000/\n访问码：${code}`;
 
 for (const mobile of [false, true])
   test.describe(mobile ? 'touch mobile' : 'desktop', () => {
@@ -50,7 +51,7 @@ for (const mobile of [false, true])
       hasTouch: mobile,
       isMobile: mobile,
     });
-    test('creation copies the actual returned code during activation; list copies the same two lines; edit does not copy', async ({
+    test('creation copies the actual returned code during activation; list copies the same three lines; edit does not copy', async ({
       page,
       context,
     }) => {
@@ -98,6 +99,10 @@ for (const mobile of [false, true])
       expect([expected, expected.replace(/\n/g, '\r\n')]).toContain(native);
       await row.getByRole('button', { name: '复制分享链接和访问码 ' + code, exact: true }).click();
       await expect.poll(() => page.evaluate(() => (window as any).copyTexts.at(-1))).toBe(expected);
+      await page.getByRole('button', { name: '复制分享链接和访问码 Ab12', exact: true }).click();
+      await expect
+        .poll(() => page.evaluate(() => (window as any).copyTexts.at(-1)))
+        .toBe(message('Ab12', 'Existing share'));
       await page.evaluate(() => navigator.clipboard.writeText('keep on edit'));
       await row.getByRole('button', { name: '编辑', exact: true }).click();
       await page.locator('#title').fill('Edited without copying');
@@ -106,6 +111,13 @@ for (const mobile of [false, true])
         page.locator('.share-row').filter({ hasText: 'Edited without copying' }),
       ).toBeVisible();
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('keep on edit');
+      const edited = page.locator('.share-row').filter({ hasText: 'Edited without copying' });
+      await edited
+        .getByRole('button', { name: '复制分享链接和访问码 ' + code, exact: true })
+        .click();
+      await expect
+        .poll(() => page.evaluate(() => (window as any).copyTexts.at(-1)))
+        .toBe(message(code, 'Edited without copying'));
     });
 
     test('denied automatic and list copy give accurate selectable fallback; retry works', async ({
@@ -169,7 +181,7 @@ for (const mobile of [false, true])
     });
   });
 
-test('missing Clipboard API keeps the successful share and both lines available for manual copying', async ({
+test('missing Clipboard API keeps the successful share and all three lines available for manual copying', async ({
   page,
 }) => {
   await login(page);
