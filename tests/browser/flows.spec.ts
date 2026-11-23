@@ -99,7 +99,7 @@ async function login(page: any) {
   await page.getByLabel('账号', { exact: true }).fill('test-owner');
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '文字分享.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '我的分享.' })).toBeVisible();
   await expect(page.locator('.share-row')).toHaveCount(4);
 }
 test('desktop admin create, edit, search, toggle, rotate, reuse and delete', async ({
@@ -256,7 +256,7 @@ test('password change revokes sessions and logout returns to the login page', as
   await page.getByLabel('账号', { exact: true }).fill('test-owner');
   await page.getByLabel('密码', { exact: true }).fill('654321');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '文字分享.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '我的分享.' })).toBeVisible();
   await page.getByRole('button', { name: '退出登录' }).click();
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible();
 });

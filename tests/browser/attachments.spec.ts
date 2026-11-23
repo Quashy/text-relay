@@ -29,6 +29,10 @@ test('desktop owner uploads and deletes; signed-out mobile visitor downloads the
     db.close();
   }
 
+  // Explicitly exercise the manual-copy fallback instead of depending on host clipboard permissions.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined });
+  });
   await page.goto('/manage/login');
   await page.getByLabel('账号', { exact: true }).fill(username);
   await page.getByLabel('密码', { exact: true }).fill(password);
@@ -41,6 +45,10 @@ test('desktop owner uploads and deletes; signed-out mobile visitor downloads the
   await page.getByRole('button', { name: '创建分享', exact: true }).click();
   const row = page.locator('.share-row').filter({ hasText: title });
   await expect(row).toBeVisible();
+  const fallback = page.getByRole('dialog', { name: '复制分享信息' });
+  await expect(fallback).toBeVisible();
+  await fallback.getByRole('button', { name: '关闭复制窗口' }).click();
+  await expect(fallback).toHaveCount(0);
   const code = (await row.locator('.row-code code').textContent())!;
   const mobile = await browser.newContext({
     baseURL: 'http://localhost:3000',
