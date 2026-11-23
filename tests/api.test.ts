@@ -416,7 +416,7 @@ test('WAL backup restoration, migrations are idempotent, public reading can be p
     (restored.prepare('SELECT body FROM shares').get() as any).body,
     'preserve\n  whitespace',
   );
-  assert.equal((restored.prepare('SELECT count(*) n FROM schema_migrations').get() as any).n, 2);
+  assert.equal((restored.prepare('SELECT count(*) n FROM schema_migrations').get() as any).n, 3);
   const paused = await createApp({ db: restored, origin, rateLimit: false, publicRead: false });
   const r = await paused.inject({
     method: 'POST',

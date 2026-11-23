@@ -26,6 +26,8 @@ API 测试使用临时或内存数据库，不接触运行数据。浏览器测�
 
 测试截图位于 docs/evidence；trace 和机器报告在 test-results（Git 忽略）。CI 使用 Playwright 管理的 headless shell；可通过 PLAYWRIGHT_CHROMIUM_EXECUTABLE 指定本地兼容浏览器。
 
+附件验收使用小文件，并在 API 测试里缩小上限覆盖边界，不需要上传真实的 800 MB 文件。临时验收数据库的附件目录和正式运行数据分离。
+
 目录：src/client 是界面，src/server 是 API/数据库/CLI，src/shared 是类型；tests 是行为验收；deploy 是未执行部署示例。更改数据库结构应增加新版本迁移并先做备份，不编辑已经发布的迁移。
 
 

@@ -15,7 +15,7 @@ export function openDb(path: string) {
   const schema =
     (db.prepare('SELECT max(version) AS v FROM schema_migrations').get() as { v: number | null })
       .v ?? 0;
-  if (schema > 2) {
+  if (schema > 3) {
     db.close();
     throw Error('Database schema is newer than this application');
   }
@@ -75,6 +75,46 @@ export function openDb(path: string) {
           DROP TABLE sessions;
           DROP TABLE admin;
           INSERT INTO schema_migrations VALUES(2,unixepoch()*1000);
+        `);
+        if ((db.pragma('foreign_key_check') as unknown[]).length)
+          throw Error('Migration foreign key check failed');
+      }).immediate();
+    } catch (error) {
+      db.close();
+      throw error;
+    }
+  }
+  if (!db.prepare('SELECT version FROM schema_migrations WHERE version=3').get()) {
+    try {
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE attachment_shares (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 120),
+            body TEXT NOT NULL CHECK(length(CAST(body AS BLOB)) <= 102400),
+            code TEXT COLLATE BINARY NOT NULL UNIQUE CHECK(length(code)=4 AND code NOT GLOB '*[^A-Za-z0-9]*'),
+            enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+            owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE
+          );
+          INSERT INTO attachment_shares SELECT * FROM shares;
+          DROP TABLE shares;
+          ALTER TABLE attachment_shares RENAME TO shares;
+          CREATE INDEX shares_owner ON shares(owner_id,updated_at DESC);
+          CREATE TABLE attachments (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, size INTEGER NOT NULL,
+            owner_id INTEGER NOT NULL, share_id TEXT UNIQUE REFERENCES shares(id) ON DELETE SET NULL,
+            state TEXT NOT NULL CHECK(state IN ('uploading','ready','active','deleting')),
+            updated_at INTEGER NOT NULL
+          );
+          CREATE INDEX attachments_cleanup ON attachments(state,updated_at);
+          CREATE INDEX attachments_owner ON attachments(owner_id);
+          CREATE TRIGGER shares_attachment_cleanup BEFORE DELETE ON shares BEGIN
+            UPDATE attachments SET state='deleting',share_id=NULL WHERE share_id=OLD.id;
+          END;
+          CREATE TRIGGER users_attachment_cleanup BEFORE DELETE ON users BEGIN
+            UPDATE attachments SET state='deleting',share_id=NULL WHERE owner_id=OLD.id;
+          END;
+          INSERT INTO schema_migrations VALUES(3,unixepoch()*1000);
         `);
         if ((db.pragma('foreign_key_check') as unknown[]).length)
           throw Error('Migration foreign key check failed');

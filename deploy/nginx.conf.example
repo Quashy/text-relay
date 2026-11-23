@@ -32,6 +32,23 @@ server {
         limit_req zone=textrelay_login_all burst=5 nodelay;
         include /path/to/textrelay-proxy.conf;
     }
+    # Application enforces a strict <800,000,000-byte individual file limit.
+    location = /api/admin/attachments {
+        client_max_body_size 800m;
+        client_body_timeout 120s;
+        proxy_request_buffering off;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        include /path/to/textrelay-proxy.conf;
+    }
+    location ^~ /api/share/attachment/ {
+        access_log off;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 120s;
+        send_timeout 120s;
+        include /path/to/textrelay-proxy.conf;
+    }
     location / {
         include /path/to/textrelay-proxy.conf;
     }

@@ -26,9 +26,9 @@ import {
   Github,
   AlertTriangle,
 } from 'lucide-react';
-import type { Share, ShareList } from '../shared/types';
+import type { Attachment, PublicAttachment, Share, ShareList } from '../shared/types';
 import './style.css';
-import { api } from './api';
+import { api, uploadAttachment } from './api';
 import Dialog from './Dialog';
 import Users from './Users';
 import { shareMessage, copyShareText, copyCreatedShare } from './shareClipboard';
@@ -82,7 +82,15 @@ function Footer() {
 function App() {
   return location.pathname.startsWith('/manage') ? <Manage /> : <Public />;
 }
+const fileSize = (bytes: number) =>
+  bytes < 1000
+    ? `${bytes} B`
+    : bytes < 1000000
+      ? `${(bytes / 1000).toFixed(1)} KB`
+      : `${(bytes / 1000000).toFixed(1)} MB`;
+
 function Public() {
+  const [attachment, setAttachment] = useState<PublicAttachment | null>(null);
   const [code, setCode] = useState(''),
     [body, setBody] = useState<string | null>(null),
     [error, setError] = useState(''),
@@ -105,7 +113,10 @@ function Public() {
     }
     setBusy(true);
     try {
-      const r = await api<{ body: string }>('/share/resolve', { code: code.trim() });
+      const r = await api<{ body: string; attachment?: PublicAttachment }>('/share/resolve', {
+        code: code.trim(),
+      });
+      setAttachment(r.attachment ?? null);
       setBody(r.body);
     } catch (e) {
       setError((e as Error).message);
@@ -149,13 +160,13 @@ function Public() {
               <p className="intro">
                 无需账号，无需多余步骤。
                 <br />
-                输入四位访问码，接收属于你的那段文字。
+                输入四位访问码，接收文字或下载附件。
               </p>
             </div>
             <div className="landing-access">
               <section className="access-card">
                 <div className="card-caption">
-                  <span>接收一段文字</span>
+                  <span>接收分享</span>
                   <span className="caption-step">01 / RECEIVE</span>
                 </div>
                 <form onSubmit={submit}>
@@ -207,9 +218,9 @@ function Public() {
               <div className="landing-note">
                 <span>01 输入访问码</span>
                 <i />
-                <span>02 查看文字</span>
+                <span>02 查看内容</span>
                 <i />
-                <span>03 一键复制</span>
+                <span>03 复制或下载</span>
               </div>
             </div>
           </>
@@ -220,6 +231,7 @@ function Public() {
                 className="text-button"
                 onClick={() => {
                   setBody(null);
+                  setAttachment(null);
                   setCode('');
                   setCopyError(false);
                 }}
@@ -236,21 +248,34 @@ function Public() {
                     <FileText size={20} />
                   </span>
                   <div>
-                    <h1>文字已抵达</h1>
-                    <p>保留原样，随时复制</p>
+                    <h1>{body ? '文字已抵达' : '文件已抵达'}</h1>
+                    <p>{body ? '保留原样，随时复制' : '下载附件到你的设备'}</p>
                   </div>
                 </div>
-                <button className="primary" onClick={copy}>
-                  {copied ? <Check size={16} /> : <Copy size={16} />}{' '}
-                  {copied ? '已复制' : '复制全文'}
-                </button>
+                {body && (
+                  <button className="primary" onClick={copy}>
+                    {copied ? <Check size={16} /> : <Copy size={16} />}{' '}
+                    {copied ? '已复制' : '复制全文'}
+                  </button>
+                )}
               </div>
               {copyError && (
                 <p className="notice" role="status">
                   自动复制未成功，已为你选中文字，请手动复制。
                 </p>
               )}
-              <pre className="plain-text">{body}</pre>
+              {body && <pre className="plain-text">{body}</pre>}
+              {attachment && (
+                <div className="attachment-row">
+                  <div className="attachment-details">
+                    <strong>{attachment.name}</strong>
+                    <small>{fileSize(attachment.size)}</small>
+                  </div>
+                  <a className="primary" href={attachment.downloadUrl} download>
+                    下载附件
+                  </a>
+                </div>
+              )}
               {copyError && (
                 <textarea
                   ref={fallbackRef}
@@ -260,11 +285,13 @@ function Public() {
                   value={body}
                 />
               )}
-              <div className="reader-meta">
-                <span className="live-dot" />
-                纯文本 · {new TextEncoder().encode(body).length.toLocaleString()} 字节
-                <span>格式已保留</span>
-              </div>
+              {body && (
+                <div className="reader-meta">
+                  <span className="live-dot" />
+                  纯文本 · {new TextEncoder().encode(body).length.toLocaleString()} 字节
+                  <span>格式已保留</span>
+                </div>
+              )}
             </section>
           </>
         )}
@@ -287,7 +314,8 @@ function Manage() {
     [page, setPage] = useState(1),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(''),
-    [toast, setToast] = useState('');
+    [toast, setToast] = useState(''),
+    [cleanupNotice, setCleanupNotice] = useState('');
   const [copyFallback, setCopyFallback] = useState<{ text: string; created: boolean } | null>(null);
   const copySequence = useRef(0);
   function reportCopy(text: string, result: Promise<boolean>, created = false) {
@@ -419,7 +447,7 @@ function Manage() {
           <h1>
             欢迎回来<span className="brand-dot">.</span>
           </h1>
-          <p className="intro">登录后，继续管理你的文字分享。</p>
+          <p className="intro">登录后，继续管理你的分享。</p>
           <section className="access-card login-card">
             <div className="card-caption">
               账号登录 <KeyRound size={18} />
@@ -466,7 +494,7 @@ function Manage() {
     <div className="manage-layout">
       <header className="manage-header">
         <Brand />
-        <span className="workspace-label">文字工作台</span>
+        <span className="workspace-label">分享工作台</span>
         <div className="account">
           <RepositoryLink />
           <span>
@@ -513,9 +541,9 @@ function Manage() {
               <div>
                 <div className="eyebrow">YOUR TEXT LIBRARY</div>
                 <h1>
-                  文字分享<span className="brand-dot">.</span>
+                  我的分享<span className="brand-dot">.</span>
                 </h1>
-                <p>整理文字，分享灵感，让每段内容都有自己的入口。</p>
+                <p>在同一个工作台分享文字和文件。</p>
               </div>
               <button className="primary" onClick={() => setEditor('new')}>
                 <Plus size={18} />
@@ -560,6 +588,11 @@ function Manage() {
                 )}
               </label>
             </div>
+            {cleanupNotice && (
+              <p className="notice" role="status">
+                {cleanupNotice}
+              </p>
+            )}
             {error && (
               <p className="notice error" role="alert">
                 {error}
@@ -609,6 +642,7 @@ function Manage() {
                       <span>
                         <strong>{share.title}</strong>
                         <small>{share.body.replace(/\s+/g, ' ').slice(0, 80)}</small>
+                        {share.attachment && <small>附件：{share.attachment.name}</small>}
                       </span>
                     </button>
                     <div className="row-code">
@@ -672,7 +706,7 @@ function Manage() {
               )}
               <div className="table-footer">
                 <span>
-                  共 {list.total} 段文字 <span className="footer-dot">·</span>{' '}
+                  共 {list.total} 条分享 <span className="footer-dot">·</span>{' '}
                   每一段，都值得被妥善传递
                 </span>
                 <div className="pagination">
@@ -713,9 +747,10 @@ function Manage() {
         <Editor
           share={editor}
           close={() => setEditor(null)}
-          saved={(created) => {
+          saved={(created, cleanupPending) => {
             setEditor(null);
             if (created) reportCopy(shareMessage(created.share), created.copied, true);
+            else if (cleanupPending) setCleanupNotice('更改已保存，旧附件正在等待服务器清理。');
             else setToast('更改已保存');
             void load();
           }}
@@ -725,9 +760,10 @@ function Manage() {
         <Confirm
           action={confirm}
           close={() => setConfirm(null)}
-          saved={() => {
+          saved={(cleanupPending) => {
             setConfirm(null);
-            setToast(confirm.type === 'delete' ? '分享已删除' : '访问码已更换');
+            if (cleanupPending) setCleanupNotice('分享已下线，附件正在等待服务器清理。');
+            else setToast(confirm.type === 'delete' ? '分享已删除' : '访问码已更换');
             void load();
           }}
         />
@@ -845,7 +881,7 @@ function Editor({
 }: {
   share: Share | 'new';
   close: () => void;
-  saved: (created?: CreatedShare) => void;
+  saved: (created?: CreatedShare, cleanupPending?: boolean) => void;
 }) {
   const existing = share !== 'new';
   const [exiting, setExiting] = useState(false);
@@ -855,8 +891,32 @@ function Editor({
     afterExit.current = action;
     setExiting(true);
   };
-  const close = () => dismiss(onClose);
-  const saved = (created?: CreatedShare) => dismiss(() => onSaved(created));
+  const close = () => {
+    discardStaged();
+    dismiss(onClose);
+  };
+  const saved = (created?: CreatedShare, cleanupPending?: boolean) =>
+    dismiss(() => onSaved(created, cleanupPending));
+  const [file, setFile] = useState<File | null>(null);
+  const [removeAttachment, setRemoveAttachment] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const staged = useRef<{ file: File; attachment: Attachment } | null>(null);
+  const cancelUpload = useRef<(() => void) | null>(null);
+  function discardStaged() {
+    const previous = staged.current;
+    staged.current = null;
+    if (!previous) return;
+    // Server-side sweep still reclaims abandoned uploads if this request cannot complete.
+    void fetch('/api/admin/attachments/' + encodeURIComponent(previous.attachment.id), {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'X-TextRelay-Request': '1' },
+      body: '{}',
+    }).catch(() => {});
+  }
+  const storedAttachment = existing ? share.attachment : null;
+  const visibleAttachment = file ?? (removeAttachment ? null : storedAttachment);
+  const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => () => cancelUpload.current?.(), []);
   const [title, setTitle] = useState(existing ? share.title : ''),
     [body, setBody] = useState(existing ? share.body : ''),
     [code, setCode] = useState(''),
@@ -869,7 +929,9 @@ function Editor({
     title !== (existing ? share.title : '') ||
     body !== (existing ? share.body : '') ||
     enabled !== (existing ? share.enabled : true) ||
-    code !== '';
+    code !== '' ||
+    !!file ||
+    removeAttachment;
   const requestClose = () => {
     if (dirty) setDiscard(true);
     else close();
@@ -877,33 +939,66 @@ function Editor({
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    if (!body && !visibleAttachment) {
+      setError('请填写正文或选择一个附件');
+      return;
+    }
+    if (file && (file.size === 0 || file.size >= 800000000)) {
+      setError('附件不能是空文件，且必须小于 800 MB');
+      return;
+    }
     if (new TextEncoder().encode(body).length > 102400) {
       setError('正文超过 100 KiB，请缩短后保存');
       return;
     }
     setBusy(true);
     try {
-      if (existing)
-        await api(
+      let attachmentId: string | null | undefined = removeAttachment ? null : undefined;
+      if (file) {
+        if (staged.current?.file !== file) {
+          setProgress(0);
+          const upload = uploadAttachment(file, setProgress);
+          cancelUpload.current = upload.cancel;
+          try {
+            staged.current = { file, attachment: await upload.result };
+          } finally {
+            cancelUpload.current = null;
+            setProgress(null);
+          }
+        }
+        attachmentId = staged.current.attachment.id;
+      }
+      const attachmentUpdate = attachmentId === undefined ? {} : { attachmentId };
+      if (existing) {
+        const updated = await api<Share>(
           '/admin/shares/' + share.id,
-          { title, body, enabled, version: share.version },
+          { title, body, enabled, version: share.version, ...attachmentUpdate },
           'PATCH',
         );
-      else {
+        staged.current = null;
+        saved(undefined, updated.cleanupPending);
+      } else {
         const creation = api<Share>('/admin/shares', {
           title,
           body,
           enabled,
           ...(manual ? { code } : {}),
+          ...attachmentUpdate,
         });
         const copied = copyCreatedShare(creation);
         const created = await creation;
+        staged.current = null;
         saved({ share: created, copied });
         return;
       }
-      saved();
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      if (staged.current && message.includes('暂存已过期')) {
+        discardStaged();
+        setError('附件暂存已过期，重新保存即可再次上传。');
+      } else {
+        setError(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -948,6 +1043,7 @@ function Editor({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               maxLength={120}
+              disabled={busy}
               required
               autoFocus
             />
@@ -961,11 +1057,82 @@ function Editor({
               placeholder="写下或粘贴你想传递的文字…"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              required
+              disabled={busy}
               spellCheck={false}
             />
+            <label htmlFor="share-file">
+              附件 <span>可选 · 单个文件小于 800 MB</span>
+            </label>
+            <input
+              id="share-file"
+              ref={fileInput}
+              className="input attachment-input"
+              type="file"
+              accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.txt,.pdf,.zip"
+              disabled={busy}
+              onChange={(event) => {
+                const selected = event.currentTarget.files?.[0];
+                if (!selected) return;
+                discardStaged();
+                setFile(selected);
+                setRemoveAttachment(false);
+              }}
+            />
+            {visibleAttachment && (
+              <div className="attachment-row">
+                <div className="attachment-details">
+                  <strong>{visibleAttachment.name}</strong>
+                  <small>{fileSize(visibleAttachment.size)}</small>
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    if (fileInput.current) fileInput.current.value = '';
+                    discardStaged();
+                    if (!file) setRemoveAttachment(true);
+                    setFile(null);
+                  }}
+                >
+                  {file && storedAttachment ? '保留原附件' : '移除附件'}
+                </button>
+              </div>
+            )}
+            {removeAttachment && !visibleAttachment && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setRemoveAttachment(false)}
+              >
+                保留原附件
+              </button>
+            )}
+            <p className="field-hint">
+              支持 Word、Excel、PPT、Markdown、TXT、PDF 和 ZIP。请勿用四位码分享敏感资料。
+            </p>
+            {progress !== null && (
+              <div className="attachment-row">
+                <progress aria-label="附件上传进度" value={progress} max={100} />
+                <span role="status">
+                  {progress === 100 ? '正在确认附件…' : `已上传 ${progress}%`}
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => cancelUpload.current?.()}
+                >
+                  取消上传
+                </button>
+              </div>
+            )}
           </div>
-          <section className="editor-settings" aria-label="分享设置">
+          <fieldset
+            className="editor-settings attachment-settings"
+            aria-label="分享设置"
+            disabled={busy}
+          >
             <label htmlFor="new-code">
               访问码 <span>四位字母或数字，区分大小写</span>
             </label>
@@ -1020,7 +1187,7 @@ function Editor({
               <div>
                 <strong>启用分享</strong>
                 <small>
-                  {enabled ? '知道访问码的人可以查看正文' : '访客暂时无法查看，访问码仍被保留'}
+                  {enabled ? '知道访问码的人可以取件' : '访客暂时无法查看，访问码仍被保留'}
                 </small>
               </div>
               <input
@@ -1030,7 +1197,7 @@ function Editor({
                 onChange={(e) => setEnabled(e.target.checked)}
               />
             </label>
-          </section>
+          </fieldset>
           <div className="error editor-errors" role="alert">
             {error}
           </div>
@@ -1085,7 +1252,7 @@ function Confirm({
 }: {
   action: { type: 'delete' | 'rotate'; share: Share };
   close: () => void;
-  saved: () => void;
+  saved: (cleanupPending?: boolean) => void;
 }) {
   const [code, setCode] = useState(''),
     [manual, setManual] = useState(false),
@@ -1095,12 +1262,12 @@ function Confirm({
     e.preventDefault();
     setBusy(true);
     try {
-      await api(
+      const result = await api<{ cleanupPending?: boolean }>(
         '/admin/shares/' + action.share.id + (action.type === 'rotate' ? '/rotate-code' : ''),
         { version: action.share.version, ...(action.type === 'rotate' && manual ? { code } : {}) },
         action.type === 'delete' ? 'DELETE' : 'POST',
       );
-      saved();
+      saved(result.cleanupPending);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1128,7 +1295,9 @@ function Confirm({
         <p className="modal-description">
           「{action.share.title}」
           {action.type === 'delete'
-            ? '将被永久删除，无法在后台恢复。'
+            ? action.share.attachment
+              ? '及服务器上的附件将被删除，无法在后台恢复。'
+              : '将被永久删除，无法在后台恢复。'
             : '当前访问码为 ' + action.share.code + '。'}
         </p>
         <p className="notice">旧码将被释放，重新分配后，知道旧码的人也能查看新内容。</p>

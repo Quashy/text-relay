@@ -1,4 +1,8 @@
+export type Attachment = { id: string; name: string; size: number };
+export type PublicAttachment = Omit<Attachment, 'id'> & { downloadUrl: string };
 export type Share = {
+  attachment?: Attachment | null;
+  cleanupPending?: boolean;
   id: string;
   title: string;
   body: string;

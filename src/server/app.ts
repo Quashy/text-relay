@@ -3,10 +3,12 @@ import cookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import type { Db } from './db.js';
 import { digest, hashPassword, verifyPassword, randomCode, Limiter } from './security.js';
 import type { Share } from '../shared/types.js';
+import type { Readable } from 'node:stream';
+import { AttachmentError, attachmentIdSchema, attachmentStore } from './attachments.js';
 type Options = {
   db: Db;
   origin: string;
@@ -17,6 +19,8 @@ type Options = {
   now?: () => number;
   logger?: boolean;
   trustedProxy?: string[];
+  attachmentDir?: string;
+  attachmentMaxBytes?: number;
 };
 type Row = Omit<Share, 'enabled'> & { enabled: number };
 const codePattern = '^[A-Za-z0-9]{4}$';
@@ -33,7 +37,7 @@ const query = obj({
   q: str(200, 0),
   status: { type: 'string', enum: ['all', 'enabled', 'disabled'] },
 });
-const toShare = (r: Row): Share => ({
+const baseShare = (r: Row): Share => ({
   id: r.id,
   title: r.title,
   body: r.body,
@@ -57,6 +61,38 @@ export async function createApp(o: Options) {
     trustProxy: o.trustedProxy?.length ? o.trustedProxy : false,
     ajv: { customOptions: { coerceTypes: false, removeAdditional: false } },
   });
+  const staticRoot = resolve(o.staticRoot ?? 'dist/client');
+  const attachments = attachmentStore(db, now, o.attachmentDir, o.attachmentMaxBytes);
+  if (attachments.root) {
+    const inside = (root: string, web: string) => {
+      root = root.toLowerCase();
+      web = web.toLowerCase();
+      return root === web || root.startsWith(web + '/') || root.startsWith(web + '\\');
+    };
+    if (
+      inside(attachments.root, staticRoot) ||
+      (existsSync(staticRoot) && inside(realpathSync(attachments.root), realpathSync(staticRoot)))
+    )
+      throw Error('Attachment storage must not be inside the static directory');
+    attachments.sweep();
+    const cleanup = setInterval(() => {
+      try {
+        attachments.sweep();
+      } catch {
+        app.log.warn('Attachment cleanup will retry');
+      }
+    }, 60_000);
+    cleanup.unref();
+    app.addHook('onClose', (_, done) => {
+      clearInterval(cleanup);
+      done();
+    });
+  }
+  const toShare = (row: Row): Share => {
+    const attachment = attachments.current(row.id);
+    return attachment ? { ...baseShare(row), attachment } : baseShare(row);
+  };
+  const uploadPath = '/api/admin/attachments';
   await app.register(cookie);
   const bad = (reply: any, status: number, message: string) => reply.code(status).send({ message });
   const cookieOptions = {
@@ -112,7 +148,8 @@ export async function createApp(o: Options) {
       if (
         req.headers.origin !== o.origin ||
         req.headers['x-textrelay-request'] !== '1' ||
-        req.headers['content-type']?.split(';')[0] !== 'application/json'
+        req.headers['content-type']?.split(';')[0] !==
+          (route === uploadPath ? 'application/octet-stream' : 'application/json')
       )
         return bad(reply, 403, '请求来源验证失败，请刷新后重试');
     }
@@ -141,6 +178,7 @@ export async function createApp(o: Options) {
   });
   app.setErrorHandler((error, req, reply) => {
     const err = error as Error & { code?: string; statusCode?: number; validation?: unknown };
+    if (error instanceof AttachmentError) return bad(reply, error.status, error.message);
     if (err.validation || err.statusCode === 400)
       return bad(reply, 400, '输入格式不正确，请检查后重试');
     if (err.statusCode === 413) return bad(reply, 413, '内容过长，请缩短后重试');
@@ -168,14 +206,57 @@ export async function createApp(o: Options) {
       const row =
         o.publicRead === false
           ? undefined
-          : db
+          : (db
               .prepare(
-                'SELECT body,updated_at FROM shares WHERE code=? COLLATE BINARY AND enabled=1',
+                'SELECT id,body,version,updated_at FROM shares WHERE code=? COLLATE BINARY AND enabled=1',
               )
-              .get(code);
-      return row ?? bad(reply, 404, '访问码无效或内容不可用');
+              .get(code) as Pick<Row, 'id' | 'body' | 'version' | 'updated_at'> | undefined);
+      if (!row) return bad(reply, 404, '访问码无效或内容不可用');
+      const attachment = attachments.current(row.id);
+      return {
+        body: row.body,
+        updated_at: row.updated_at,
+        ...(attachment && { attachment: attachments.publicInfo(attachment, row.id, row.version) }),
+      };
     },
   );
+  app.get('/api/share/attachment/:id', (req, reply) => {
+    if (o.publicRead === false) return bad(reply, 404, '附件不可用，请重新输入访问码');
+    const { id } = req.params as { id: string };
+    return attachments.download(
+      id,
+      (req.query as { ticket?: string }).ticket,
+      req.headers.range,
+      reply,
+    );
+  });
+  await app.register(async (uploads) => {
+    // Keep the stream parser and enlarged upload limit scoped to the one authenticated route.
+    uploads.addContentTypeParser('application/octet-stream', (_, payload, done) =>
+      done(null, payload),
+    );
+    uploads.post(uploadPath, async (req, reply) => {
+      const user = identity(req)!;
+      const uploaded = await attachments.upload(
+        req.body as Readable,
+        req.headers['x-textrelay-filename'],
+        req.headers['content-length'],
+        user.id,
+        () => identity(req)?.id === user.id && !req.raw.aborted,
+      );
+      return reply.code(201).send(uploaded);
+    });
+  });
+  app.delete('/api/admin/attachments/:id', { schema: { body: obj({}) } }, (req, reply) => {
+    const done = attachments.discard((req.params as { id: string }).id, identity(req)!.id);
+    return done === undefined
+      ? bad(reply, 404, '附件不存在')
+      : { ok: true, ...(!done && { cleanupPending: true }) };
+  });
+  app.post('/api/admin/attachments/cleanup', { schema: { body: obj({}) } }, (req) => {
+    const done = attachments.cleanOwner(identity(req)!.id);
+    return { ok: true, ...(!done && { cleanupPending: true }) };
+  });
   app.post(
     '/api/auth/login',
     { schema: { body: obj({ username: str(100), password: str(256) }, ['username', 'password']) } },
@@ -293,17 +374,28 @@ export async function createApp(o: Options) {
       .get((req.params as { id: string }).id, identity(req)!.id) as Row | undefined;
     return r ? toShare(r) : bad(reply, 404, '内容不存在');
   });
-  const content = { title: str(120), body: str(102400), enabled: { type: 'boolean' } };
+  const content = {
+    title: str(120),
+    body: str(102400, 0),
+    enabled: { type: 'boolean' },
+    attachmentId: attachmentIdSchema,
+  };
+  function stagedAttachment(id: string | null | undefined, owner: number) {
+    if (!id) return undefined;
+    const file = attachments.staged(id, owner);
+    if (!file) throw new AttachmentError(404, '附件不可用或上传暂存已过期，请重新选择文件');
+    return file;
+  }
+  function requireShareContent(body: string, hasAttachment: boolean) {
+    if (!body.length && !hasAttachment) throw new AttachmentError(400, '请填写正文或添加一个附件');
+  }
   function validateContent(data: { title?: string; body?: string }, reply: any) {
     if (data.title !== undefined && !data.title.trim()) {
       bad(reply, 400, '请填写标题');
       return false;
     }
-    if (
-      data.body !== undefined &&
-      (Buffer.byteLength(data.body, 'utf8') > 102400 || data.body.length === 0)
-    ) {
-      bad(reply, 400, '正文须为 1 至 100 KiB 的纯文本');
+    if (data.body !== undefined && Buffer.byteLength(data.body, 'utf8') > 102400) {
+      bad(reply, 400, '正文不能超过 100 KiB');
       return false;
     }
     return true;
@@ -323,30 +415,39 @@ export async function createApp(o: Options) {
       },
     },
     async (req, reply) => {
-      const data = req.body as { title: string; body: string; enabled: boolean; code?: string };
+      const data = req.body as {
+        title: string;
+        body: string;
+        enabled: boolean;
+        code?: string;
+        attachmentId?: string;
+      };
       if (!validateContent(data, reply)) return;
-      const id = randomUUID();
+      const id = randomUUID(),
+        owner = identity(req)!.id;
       for (let i = 0; i < 30; i++)
         try {
-          insert.run(
-            id,
-            data.title,
-            data.body,
-            data.code ?? randomCode(),
-            +data.enabled,
-            now(),
-            now(),
-            identity(req)!.id,
-          );
-          return reply
-            .code(201)
-            .send(
-              toShare(
-                db
-                  .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
-                  .get(id, identity(req)!.id) as Row,
-              ),
-            );
+          const created = db
+            .transaction(() => {
+              const file = stagedAttachment(data.attachmentId, owner);
+              requireShareContent(data.body, Boolean(file));
+              insert.run(
+                id,
+                data.title,
+                data.body,
+                data.code ?? randomCode(),
+                +data.enabled,
+                now(),
+                now(),
+                owner,
+              );
+              if (file) attachments.attach(id, file.id);
+              return toShare(
+                db.prepare('SELECT * FROM shares WHERE id=? AND owner_id=?').get(id, owner) as Row,
+              );
+            })
+            .immediate();
+          return reply.code(201).send(created);
         } catch (e) {
           if (data.code || (e as any).code !== 'SQLITE_CONSTRAINT_UNIQUE') throw e;
         }
@@ -362,31 +463,46 @@ export async function createApp(o: Options) {
         body?: string;
         enabled?: boolean;
         version: number;
+        attachmentId?: string | null;
       };
       if (!validateContent(data, reply)) return;
-      return db.transaction(() => {
-        const row = db
-          .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
-          .get((req.params as { id: string }).id, identity(req)!.id) as Row | undefined;
-        if (!row) return bad(reply, 404, '内容不存在');
-        if (row.version !== data.version)
-          return bad(reply, 409, '内容已在其他窗口更新，请重新加载');
-        db.prepare(
-          'UPDATE shares SET title=?,body=?,enabled=?,version=version+1,updated_at=? WHERE id=? AND owner_id=?',
-        ).run(
-          data.title ?? row.title,
-          data.body ?? row.body,
-          data.enabled === undefined ? row.enabled : +data.enabled,
-          now(),
-          row.id,
-          identity(req)!.id,
-        );
-        return toShare(
-          db
+      const owner = identity(req)!.id;
+      const result = db
+        .transaction(() => {
+          const row = db
             .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
-            .get(row.id, identity(req)!.id) as Row,
-        );
-      })();
+            .get((req.params as { id: string }).id, identity(req)!.id) as Row | undefined;
+          if (!row) return bad(reply, 404, '内容不存在');
+          if (row.version !== data.version)
+            return bad(reply, 409, '内容已在其他窗口更新，请重新加载');
+          const file = stagedAttachment(data.attachmentId, owner);
+          const hasFile =
+            data.attachmentId === undefined ? Boolean(attachments.current(row.id)) : Boolean(file);
+          requireShareContent(data.body ?? row.body, hasFile);
+          if (data.attachmentId !== undefined) {
+            attachments.remove(row.id);
+            if (file) attachments.attach(row.id, file.id);
+          }
+          db.prepare(
+            'UPDATE shares SET title=?,body=?,enabled=?,version=version+1,updated_at=? WHERE id=? AND owner_id=?',
+          ).run(
+            data.title ?? row.title,
+            data.body ?? row.body,
+            data.enabled === undefined ? row.enabled : +data.enabled,
+            now(),
+            row.id,
+            identity(req)!.id,
+          );
+          return toShare(
+            db
+              .prepare('SELECT * FROM shares WHERE id=? AND owner_id=?')
+              .get(row.id, identity(req)!.id) as Row,
+          );
+        })
+        .immediate();
+      if (reply.sent) return;
+      const cleaned = attachments.cleanOwner(owner);
+      return cleaned ? result : { ...result, cleanupPending: true };
     },
   );
   app.post(
@@ -432,15 +548,18 @@ export async function createApp(o: Options) {
     async (req, reply) => {
       const id = (req.params as { id: string }).id,
         { version: v } = req.body as { version: number };
-      return db.transaction(() => {
+      const owner = identity(req)!.id;
+      db.transaction(() => {
         const row = db
           .prepare('SELECT version FROM shares WHERE id=? AND owner_id=?')
           .get(id, identity(req)!.id) as { version: number } | undefined;
         if (!row) return bad(reply, 404, '内容不存在');
         if (row.version !== v) return bad(reply, 409, '内容已在其他窗口更新，请重新加载');
-        db.prepare('DELETE FROM shares WHERE id=? AND owner_id=?').run(id, identity(req)!.id);
-        return { ok: true };
-      })();
+        db.prepare('DELETE FROM shares WHERE id=? AND owner_id=?').run(id, owner);
+      }).immediate();
+      if (reply.sent) return;
+      const cleaned = attachments.cleanOwner(owner);
+      return { ok: true, ...(!cleaned && { cleanupPending: true }) };
     },
   );
   const userFields = 'id,username,role,version,created_at,updated_at';
@@ -509,7 +628,7 @@ export async function createApp(o: Options) {
     (req, reply) => {
       const id = userId(req);
       if (id === 1) return bad(reply, 403, '不能删除最高管理员');
-      return db.transaction(() => {
+      db.transaction(() => {
         const row = db.prepare('SELECT version FROM users WHERE id=?').get(id) as
           | { version: number }
           | undefined;
@@ -517,11 +636,12 @@ export async function createApp(o: Options) {
         if (row.version !== (req.body as { version: number }).version)
           return bad(reply, 409, '账号已被更新，请重新加载');
         db.prepare('DELETE FROM users WHERE id=?').run(id);
-        return { ok: true };
-      })();
+      }).immediate();
+      if (reply.sent) return;
+      const cleaned = attachments.cleanOwner(id);
+      return { ok: true, ...(!cleaned && { cleanupPending: true }) };
     },
   );
-  const staticRoot = resolve(o.staticRoot ?? 'dist/client');
   if (existsSync(staticRoot + '/index.html')) {
     await app.register(fastifyStatic, { root: staticRoot, index: false });
     for (const path of ['/', '/manage', '/manage/', '/manage/login'])

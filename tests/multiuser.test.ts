@@ -244,7 +244,7 @@ test('v1 backup, atomic v2 migration, old-session revocation and public-code con
   assert.deepEqual(db.pragma('foreign_key_check'), []);
   db.close();
   db = openDb(path);
-  assert.equal((db.prepare('SELECT count(*) n FROM schema_migrations').get() as any).n, 2);
+  assert.equal((db.prepare('SELECT count(*) n FROM schema_migrations').get() as any).n, 3);
   const app = await createApp({ db, origin: headers.origin, secure: false, rateLimit: false });
   try {
     assert.equal(

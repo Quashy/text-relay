@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { openDb } from './db.js';
 import { createApp } from './app.js';
 try {
@@ -8,9 +9,11 @@ try {
 if (process.env.NODE_ENV === 'production' && !process.env.APP_ORIGIN)
   throw Error('生产环境必须配置 APP_ORIGIN');
 const origin = process.env.APP_ORIGIN ?? 'http://localhost:3000';
-const db = openDb(process.env.DATABASE_PATH ?? './data/textrelay.db');
+const databasePath = process.env.DATABASE_PATH ?? './data/textrelay.db';
+const db = openDb(databasePath);
 const app = await createApp({
   db,
+  attachmentDir: process.env.ATTACHMENT_DIR || resolve(databasePath + '.attachments'),
   origin,
   secure: process.env.COOKIE_SECURE !== 'false',
   publicRead: process.env.PUBLIC_READ_ENABLED !== 'false',

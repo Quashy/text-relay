@@ -2100,3 +2100,31 @@ dialog[data-nested]::backdrop {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.attachment-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.attachment-details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.attachment-input {
+  width: 100%;
+}
+.reader-card .attachment-row {
+  border-top: 1px solid var(--line, #e5e7eb);
+}
+.reader-card a.primary {
+  text-decoration: none;
+}
+.attachment-settings {
+  min-width: 0;
+  margin: 0;
+}

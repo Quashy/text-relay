@@ -36,9 +36,15 @@ export default function Users() {
     setBusy(true);
     setError('');
     try {
-      await api('/admin/users/' + deleting.id, { version: deleting.version }, 'DELETE');
+      const result = await api<{ cleanupPending?: boolean }>(
+        '/admin/users/' + deleting.id,
+        { version: deleting.version },
+        'DELETE',
+      );
       setDeleting(null);
-      setNotice('账号及其分享已删除');
+      setNotice(
+        result.cleanupPending ? '账号和分享已下线，附件正在等待服务器清理。' : '账号及其分享已删除',
+      );
       await load();
     } catch (e) {
       setError((e as Error).message);
