@@ -1,11 +1,11 @@
-import { test, expect } from '@playwright/test';
-import { openDb } from '../../src/server/db.js';
+import { test, expect, type Page } from '@playwright/test';
+import { openBrowserDb } from './fixture';
 import { hashPassword } from '../../src/server/security.js';
 
 const password = 'clipboard-test-only-password';
 let username = 'copy-owner';
 test.beforeEach(async () => {
-  const db = openDb('./data/acceptance.db');
+  const db = openBrowserDb();
   db.prepare('DELETE FROM user_sessions').run();
   db.prepare('DELETE FROM users WHERE id<>1').run();
   db.prepare('DELETE FROM shares').run();
@@ -37,12 +37,12 @@ async function prepare(page: any, manual?: string) {
   await page.locator('#title').fill('New copied share');
   await page.locator('#body').fill('Body stays separate from the sharing message');
   if (manual) {
-    await page.getByRole('button', { name: '自定义', exact: true }).click();
+    await page.getByRole('radio', { name: '自定义', exact: true }).click();
     await page.locator('#new-code').fill(manual);
   }
 }
-const message = (code: string, title = 'New copied share') =>
-  `标题：${title}\n地址：http://localhost:3000/\n访问码：${code}`;
+const message = (page: Page, code: string, title = 'New copied share') =>
+  `标题：${title}\n地址：${new URL('/', page.url()).href}\n访问码：${code}`;
 
 for (const mobile of [false, true])
   test.describe(mobile ? 'touch mobile' : 'desktop', () => {
@@ -89,8 +89,8 @@ for (const mobile of [false, true])
       await page.getByRole('button', { name: '创建分享', exact: true }).click();
       const row = page.locator('.share-row').filter({ hasText: 'New copied share' });
       await expect(row).toBeVisible();
-      const code = (await row.locator('.row-code code').textContent())!;
-      const expected = message(code);
+      const code = (await row.locator('.row-code:visible code').textContent())!;
+      const expected = message(page, code);
       await expect(page.locator('.toast')).toContainText('链接和访问码已复制');
       expect(await page.evaluate(() => (window as any).writeActivation)).toBe(true);
       expect(await page.evaluate(() => (window as any).startedBeforeResponse)).toBe(true);
@@ -102,7 +102,7 @@ for (const mobile of [false, true])
       await page.getByRole('button', { name: '复制分享链接和访问码 Ab12', exact: true }).click();
       await expect
         .poll(() => page.evaluate(() => (window as any).copyTexts.at(-1)))
-        .toBe(message('Ab12', 'Existing share'));
+        .toBe(message(page, 'Ab12', 'Existing share'));
       await page.evaluate(() => navigator.clipboard.writeText('keep on edit'));
       await row.getByRole('button', { name: '编辑', exact: true }).click();
       await page.locator('#title').fill('Edited without copying');
@@ -117,12 +117,12 @@ for (const mobile of [false, true])
         .click();
       await expect
         .poll(() => page.evaluate(() => (window as any).copyTexts.at(-1)))
-        .toBe(message(code, 'Edited without copying'));
+        .toBe(message(page, code, 'Edited without copying'));
     });
 
     test('denied automatic and list copy give accurate selectable fallback; retry works', async ({
       page,
-    }) => {
+    }, testInfo) => {
       await login(page);
       await page.evaluate(() =>
         Object.defineProperty(navigator, 'clipboard', {
@@ -141,17 +141,17 @@ for (const mobile of [false, true])
       await expect(fallback).toContainText('未能写入剪贴板');
       await expect(page.locator('.toast')).toHaveCount(0);
       const field = page.getByRole('textbox', { name: '手动复制分享信息', exact: true });
-      await expect(field).toHaveValue(message('Cp01'));
+      await expect(field).toHaveValue(message(page, 'Cp01'));
       await expect(field).toBeFocused();
       const selection = await field.evaluate((el: HTMLTextAreaElement) => [
         el.selectionStart,
         el.selectionEnd,
       ]);
-      expect(selection).toEqual([0, message('Cp01').length]);
+      expect(selection).toEqual([0, message(page, 'Cp01').length]);
       await fallback.getByRole('button', { name: '重试复制', exact: true }).click();
       await expect(fallback.getByRole('status')).toContainText('复制仍未成功');
       await page.screenshot({
-        path: `docs/evidence/share-copy-fallback-${mobile ? 'mobile' : 'desktop'}.png`,
+        path: testInfo.outputPath(`share-copy-fallback-${mobile ? 'mobile' : 'desktop'}.png`),
         fullPage: true,
       });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -162,7 +162,7 @@ for (const mobile of [false, true])
       const button = page.getByRole('button', { name: '复制分享链接和访问码 Cp01', exact: true });
       await button.click();
       await expect(fallback).toBeVisible();
-      await expect(field).toHaveValue(message('Cp01'));
+      await expect(field).toHaveValue(message(page, 'Cp01'));
       await page.evaluate(() =>
         Object.defineProperty(navigator, 'clipboard', {
           configurable: true,
@@ -175,7 +175,7 @@ for (const mobile of [false, true])
       );
       await fallback.getByRole('button', { name: '重试复制', exact: true }).click();
       await expect(fallback).toHaveCount(0);
-      expect(await page.evaluate(() => (window as any).retriedText)).toBe(message('Cp01'));
+      expect(await page.evaluate(() => (window as any).retriedText)).toBe(message(page, 'Cp01'));
       await expect(page.locator('.toast')).toContainText('链接和访问码已复制');
       await expect(button).toBeFocused();
     });
@@ -191,7 +191,7 @@ test('missing Clipboard API keeps the successful share and all three lines avail
   await prepare(page, 'Cp02');
   await page.getByRole('button', { name: '创建分享', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '手动复制分享信息' })).toHaveValue(
-    message('Cp02'),
+    message(page, 'Cp02'),
   );
   await page.getByRole('button', { name: '关闭复制窗口' }).click();
   await expect(page.locator('.share-row').filter({ hasText: 'New copied share' })).toBeVisible();
@@ -205,8 +205,9 @@ test('a failed create never copies a placeholder or reports success', async ({ p
   await page.evaluate(() => navigator.clipboard.writeText('unchanged clipboard'));
   await prepare(page, 'Ab12');
   await page.getByRole('button', { name: '创建分享', exact: true }).click();
-  await expect(page.locator('.editor-errors')).not.toBeEmpty();
-  await expect(page.getByRole('dialog', { name: '新建分享', exact: true })).toBeVisible();
+  const editor = page.getByRole('dialog', { name: '新建分享', exact: true });
+  await expect(editor).toBeVisible();
+  await expect(editor.getByRole('alert')).toContainText(/访问码.*占用/);
   await expect(page.getByRole('dialog', { name: '复制分享信息', exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('unchanged clipboard');
   expect(errors).toEqual([]);
@@ -233,11 +234,57 @@ for (const allowed of [true, false])
     await page.getByRole('button', { name: '创建分享', exact: true }).click();
     if (allowed) {
       await expect(page.locator('.toast')).toContainText('链接和访问码已复制');
-      expect(await page.evaluate(() => (window as any).legacyCopyText)).toBe(message('Cp03'));
+      expect(await page.evaluate(() => (window as any).legacyCopyText)).toBe(message(page, 'Cp03'));
     } else {
       await expect(page.getByRole('textbox', { name: '手动复制分享信息' })).toHaveValue(
-        message('Cp03'),
+        message(page, 'Cp03'),
       );
       await expect(page.locator('.toast')).toHaveCount(0);
     }
   });
+
+for (const [from, to] of [
+  [639, 641],
+  [641, 639],
+] as const) {
+  test(`list copy fallback restores focus across breakpoint: ${from} to ${to}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: from, height: 844 });
+    await login(page);
+    await page.evaluate(() =>
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')),
+        },
+      }),
+    );
+
+    const row = page.locator('.share-row').filter({ hasText: 'Existing share' });
+    const copy = row.getByRole('button', { name: '复制分享链接和访问码 Ab12', exact: true });
+    const fallback = page.getByRole('dialog', {
+      name: '复制分享信息',
+      exact: true,
+      includeHidden: true,
+    });
+    const field = fallback.getByRole('textbox', { name: '手动复制分享信息', exact: true });
+    await copy.press('Enter');
+    await expect(field).toHaveValue(message(page, 'Ab12', 'Existing share'));
+    await expect(field).toBeFocused();
+
+    await page.setViewportSize({ width: to, height: 844 });
+    await expect(fallback).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(fallback).toHaveCount(0);
+    await expect(copy).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(row.getByRole('button', { name: '编辑', exact: true })).toBeFocused();
+
+    await copy.press('Enter');
+    await expect(field).toBeFocused();
+    await fallback.getByRole('button', { name: '关闭复制窗口', exact: true }).click();
+    await expect(fallback).toHaveCount(0);
+    await expect(copy).toBeFocused();
+  });
+}

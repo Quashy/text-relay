@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
-import { openDb } from '../../src/server/db.js';
+import { openBrowserDb } from './fixture';
 import { hashPassword } from '../../src/server/security.js';
 
 const password = 'attachments-browser-test-password';
@@ -11,8 +11,9 @@ const bytes = Buffer.from('# TextRelay\n\n小文件浏览器验收\n');
 test('desktop owner uploads and deletes; signed-out mobile visitor downloads the original file', async ({
   page,
   browser,
+  baseURL,
 }) => {
-  const db = openDb('./data/acceptance.db');
+  const db = openBrowserDb();
   let username: string;
   try {
     const root = db.prepare('SELECT username FROM users WHERE id=1').get() as
@@ -49,9 +50,9 @@ test('desktop owner uploads and deletes; signed-out mobile visitor downloads the
   await expect(fallback).toBeVisible();
   await fallback.getByRole('button', { name: '关闭复制窗口' }).click();
   await expect(fallback).toHaveCount(0);
-  const code = (await row.locator('.row-code code').textContent())!;
+  const code = (await row.locator('.row-code:visible code').textContent())!;
   const mobile = await browser.newContext({
-    baseURL: 'http://localhost:3000',
+    baseURL,
     viewport: { width: 390, height: 844 },
     hasTouch: true,
     isMobile: true,
@@ -73,7 +74,8 @@ test('desktop owner uploads and deletes; signed-out mobile visitor downloads the
     expect(await readFile(localPath)).toEqual(bytes);
   } finally {
     await mobile.close();
-    await row.getByRole('button', { name: '删除 ' + title }).click();
+    await row.getByRole('button', { name: '更多操作 ' + title, exact: true }).click();
+    await page.getByRole('menuitem', { name: '删除 ' + title, exact: true }).click();
     await page.getByRole('button', { name: '确认删除' }).click();
     await expect(row).toHaveCount(0);
   }

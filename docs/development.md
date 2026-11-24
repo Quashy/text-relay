@@ -22,9 +22,9 @@ npx playwright install --with-deps chromium-headless-shell
 npm run test:e2e
 ```
 
-API 测试使用临时或内存数据库，不接触运行数据。浏览器测试独占 3000 端口及 data/acceptance.db，只写虚构内容、临时测试账号，结束后删除管理员和所有会话。不要把真实数据放入验收库。测试模式仅用于隔离测试，不得作为生产 NODE_ENV。
+API 测试使用临时或内存数据库。浏览器测试默认监听 127.0.0.1:3000，可用 TEXTRELAY_E2E_PORT 指定空闲端口。每次运行在 test-results 下创建独立目录，数据库、附件、截图、trace 和机器报告都放在该目录，只包含合成数据和临时账号。测试模式仅用于隔离测试，不得作为生产 NODE_ENV。
 
-测试截图位于 docs/evidence；trace 和机器报告在 test-results（Git 忽略）。CI 使用 Playwright 管理的 headless shell；可通过 PLAYWRIGHT_CHROMIUM_EXECUTABLE 指定本地兼容浏览器。
+docs/evidence 保留历史验收记录。CI 使用 Playwright 管理的 headless shell。可用 PLAYWRIGHT_CHROMIUM_EXECUTABLE 指定本地兼容浏览器。
 
 附件验收使用小文件，并在 API 测试里缩小上限覆盖边界，不需要上传真实的 800 MB 文件。临时验收数据库的附件目录和正式运行数据分离。
 

@@ -1,0 +1,52 @@
+@import 'tailwindcss';
+@import './coss-theme.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --font-sans: 'SF Pro Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Consolas, 'PingFang SC', 'Microsoft YaHei', monospace;
+  --primary: #2457d6;
+  --ring: #2457d6;
+  --destructive: #b42318;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    position: relative;
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  #root {
+    isolation: isolate;
+  }
+}
+
+.base-ui-disable-scrollbar {
+  scrollbar-width: none;
+}
+
+.base-ui-disable-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='button'],
+  [data-slot='input-control'],
+  [data-slot='input-group'],
+  [data-slot='progress-indicator'],
+  [data-slot='textarea-control'],
+  [data-slot='switch'],
+  [data-slot='switch-thumb'],
+  [data-slot='dialog-backdrop'],
+  [data-slot='dialog-popup'],
+  [data-slot='alert-dialog-backdrop'],
+  [data-slot='alert-dialog-popup'] {
+    transition: none;
+  }
+}

@@ -1,14 +1,13 @@
 import { settleMotion } from './motion';
 import { test, expect } from '@playwright/test';
-import { openDb } from '../../src/server/db.js';
+import { openBrowserDb } from './fixture';
 import { hashPassword } from '../../src/server/security.js';
-import { mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 const password = 'browser-test-only-password';
 const body =
   '  项目协作小记\n\n1. 保留每一次换行。\n2. 让文字轻松抵达。\n\t<script>window.hacked=true</script>  \n';
 test.beforeAll(async () => {
-  const db = openDb('./data/acceptance.db');
+  const db = openBrowserDb();
   db.exec('DROP TRIGGER IF EXISTS protect_superadmin_identity');
   db.prepare('DELETE FROM user_sessions').run();
   db.prepare('DELETE FROM users WHERE id<>1').run();
@@ -31,10 +30,9 @@ test.beforeAll(async () => {
   for (const [title, text, code, enabled] of samples)
     insert.run(randomUUID(), title, text, code, enabled, Date.now(), Date.now());
   db.close();
-  mkdirSync('docs/evidence', { recursive: true });
 });
 test.afterAll(() => {
-  const db = openDb('./data/acceptance.db');
+  const db = openBrowserDb();
   db.prepare('DELETE FROM user_sessions').run();
   db.prepare('DELETE FROM users WHERE id<>1').run();
   db.close();
@@ -42,7 +40,7 @@ test.afterAll(() => {
 test('desktop public reading, exact clipboard and safe plain-text rendering', async ({
   page,
   context,
-}) => {
+}, testInfo) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.setViewportSize({ width: 1440, height: 1000 });
   const errors: string[] = [];
@@ -51,7 +49,7 @@ test('desktop public reading, exact clipboard and safe plain-text rendering', as
   await expect(page.getByRole('heading', { name: '让文字， 轻松抵达。' })).toBeVisible();
   expect(await page.locator('#access-code').getAttribute('autocapitalize')).toBe('none');
   await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/public-desktop.png', fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('public-desktop.png'), fullPage: true });
   await page.getByLabel('访问码 区分大小写').fill('Ab12');
   await page.getByRole('button', { name: '查看内容' }).click();
   await expect(page.locator('.plain-text')).toHaveText(body, { useInnerText: false });
@@ -91,7 +89,7 @@ test('desktop public reading, exact clipboard and safe plain-text rendering', as
   await expect(pasteTarget).toHaveValue(body);
   await pasteTarget.evaluate((element) => element.remove());
   await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/reader-desktop.png', fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('reader-desktop.png'), fullPage: true });
   expect(errors).toEqual([]);
 });
 async function login(page: any) {
@@ -99,26 +97,26 @@ async function login(page: any) {
   await page.getByLabel('账号', { exact: true }).fill('test-owner');
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '我的分享.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '我的分享', exact: true })).toBeVisible();
   await expect(page.locator('.share-row')).toHaveCount(4);
 }
 test('desktop admin create, edit, search, toggle, rotate, reuse and delete', async ({
   page,
   context,
-}) => {
+}, testInfo) => {
   // This CRUD flow assumes copying succeeds; denied-copy fallback has dedicated coverage.
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await login(page);
   await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/manage-desktop.png', fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('manage-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: '新建分享', exact: true }).first().click();
-  await page.getByLabel('标题 随分享信息复制').fill('验收用分享');
+  await page.getByRole('textbox', { name: /^标题/ }).fill('验收用分享');
   await page.getByRole('textbox', { name: /^正文/ }).fill('original\n  body');
-  await page.getByRole('button', { name: '自定义', exact: true }).click();
-  await page.getByLabel('访问码 四位字母或数字，区分大小写').fill('Ui01');
+  await page.getByRole('radio', { name: '自定义', exact: true }).click();
+  await page.getByRole('textbox', { name: /^访问码/ }).fill('Ui01');
   await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/editor-desktop.png', fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('editor-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: '创建分享', exact: true }).click();
   const row = page.locator('.share-row').filter({ hasText: '验收用分享' });
   await expect(row).toBeVisible();
@@ -128,48 +126,124 @@ test('desktop admin create, edit, search, toggle, rotate, reuse and delete', asy
   await expect(row).toContainText('updated');
   await page.getByRole('textbox', { name: '搜索分享' }).fill('Ui01');
   await expect(page.locator('.share-row')).toHaveCount(1);
-  await row.getByRole('button', { name: '停用验收用分享', exact: true }).click();
-  await expect(row.getByRole('button', { name: '启用验收用分享', exact: true })).toBeVisible();
-  await row.getByRole('button', { name: '启用验收用分享', exact: true }).click();
-  await row.getByRole('button', { name: '换码 验收用分享' }).click();
-  await page.getByRole('button', { name: '自定义', exact: true }).click();
-  await page.getByLabel('新访问码', { exact: true }).fill('Ui02');
+  const shareStatus = row.getByRole('switch', { name: '分享状态：验收用分享', exact: true });
+  const thumb = shareStatus.locator('[data-slot=switch-thumb]');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(shareStatus).toHaveAttribute('aria-checked', 'true');
+  await expect(thumb).toHaveCSS('transition-duration', '0s');
+  const enabledOffset = await thumb.evaluate((element) => getComputedStyle(element).translate);
+  await shareStatus.click();
+  await expect(shareStatus).toHaveAttribute('aria-checked', 'false');
+  await expect(thumb).not.toHaveCSS('translate', enabledOffset);
+  await shareStatus.click();
+  await expect(shareStatus).toHaveAttribute('aria-checked', 'true');
+  await expect(thumb).toHaveCSS('translate', enabledOffset);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const menu = row.getByRole('button', { name: '更多操作 验收用分享', exact: true });
+  await menu.click();
+  await page.getByRole('menuitem', { name: '换码 验收用分享', exact: true }).click();
+  const rotate = page.getByRole('dialog', { name: '更换访问码', exact: true });
+  const rotationMode = rotate.getByRole('radiogroup', { name: '换码方式' });
+  const random = rotationMode.getByRole('radio', { name: '随机换码', exact: true });
+  const custom = rotationMode.getByRole('radio', { name: '自定义', exact: true });
+  await expect(random).toBeChecked();
+  await random.press('ArrowRight');
+  await expect(custom).toBeFocused();
+  await expect(custom).toBeChecked();
+  await expect(random).not.toBeChecked();
+  await rotate.getByLabel('新访问码', { exact: true }).fill('Ui02');
   await page.getByRole('button', { name: '确认换码' }).click();
   await expect(page.locator('.share-row')).toHaveCount(0);
   await page.getByRole('button', { name: '清空搜索' }).click();
   await expect(page.locator('.share-row')).toHaveCount(5);
-  await row.getByRole('button', { name: '删除 验收用分享' }).click();
+  await menu.click();
+  await page.getByRole('menuitem', { name: '删除 验收用分享', exact: true }).click();
   await page.getByRole('button', { name: '确认删除' }).click();
   await expect(row).toHaveCount(0);
   await page.getByRole('textbox', { name: '搜索分享' }).fill('无匹配项');
   await expect(page.getByText('没有找到相关文字')).toBeVisible();
   await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/search-empty.png', fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('search-empty.png'), fullPage: true });
 });
-test('mobile layout, centered editor and keyboard dialog focus', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await login(page);
-  await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/manage-mobile.png', fullPage: true });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole('button', { name: '新建分享', exact: true }).first().click();
-  await expect(page.getByRole('dialog', { name: '新建分享' })).toBeVisible();
-  await page.getByLabel('标题 随分享信息复制').fill('手机测试');
-  await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/editor-mobile.png', fullPage: false });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: '放弃更改' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.goto('/');
-  await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/public-mobile.png', fullPage: true });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByLabel('访问码 区分大小写').fill('Ab12');
-  await page.getByRole('button', { name: '查看内容' }).click();
-  await expect(page.locator('.plain-text')).toBeVisible();
-  await settleMotion(page);
-  await page.screenshot({ path: 'docs/evidence/reader-mobile.png', fullPage: true });
+test.describe(() => {
+  test.use({ hasTouch: true, isMobile: true });
+  test('mobile layout, centered editor and keyboard dialog focus', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await login(page);
+    await settleMotion(page);
+    await page.screenshot({ path: testInfo.outputPath('manage-mobile.png'), fullPage: true });
+    const row = page.locator('.share-row').filter({ hasText: '项目协作小记' });
+    const tableContainer = page.locator('[data-slot=table-container]').filter({
+      has: page.getByRole('table', { name: '分享列表', exact: true }),
+    });
+    const copy = row.getByRole('button', { name: '复制分享链接和访问码 Ab12', exact: true });
+    const edit = row.getByRole('button', { name: '编辑', exact: true });
+    const more = row.getByRole('button', { name: '更多操作 项目协作小记', exact: true });
+    const editDialog = page.getByRole('dialog', {
+      name: '编辑分享',
+      exact: true,
+      includeHidden: true,
+    });
+    const menu = page.getByRole('menu');
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await expect(row.getByRole('cell')).toHaveCount(2);
+      await expect(row.locator('.row-code:visible code')).toHaveText('Ab12');
+      await expect(copy).toBeVisible();
+      expect(await tableContainer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await edit.scrollIntoViewIfNeeded();
+      const editBounds = (await edit.boundingBox())!;
+      const moreBounds = (await more.boundingBox())!;
+      for (const bounds of [editBounds, moreBounds]) {
+        expect(bounds.width).toBeGreaterThanOrEqual(44);
+        expect(bounds.height).toBeGreaterThanOrEqual(44);
+      }
+      expect(editBounds.x + editBounds.width).toBeLessThanOrEqual(moreBounds.x);
+
+      await page.touchscreen.tap(
+        editBounds.x + editBounds.width - 1,
+        editBounds.y + editBounds.height / 2,
+      );
+      await expect(editDialog).toBeVisible();
+      await expect(menu).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(editDialog).toHaveCount(0);
+
+      const menuBounds = (await more.boundingBox())!;
+      await page.touchscreen.tap(menuBounds.x + 1, menuBounds.y + menuBounds.height / 2);
+      await expect(
+        menu.getByRole('menuitem', { name: '停用项目协作小记', exact: true }),
+      ).toBeVisible();
+      await expect(editDialog).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+    }
+    await page.getByRole('button', { name: '新建分享', exact: true }).first().click();
+    await expect(page.getByRole('dialog', { name: '新建分享' })).toBeVisible();
+    await page.getByLabel('标题 随分享信息复制').fill('手机测试');
+    await settleMotion(page);
+    await page.screenshot({ path: testInfo.outputPath('editor-mobile.png'), fullPage: false });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: '放弃更改' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.goto('/');
+    await settleMotion(page);
+    await page.screenshot({ path: testInfo.outputPath('public-mobile.png'), fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.getByLabel('访问码 区分大小写').fill('Ab12');
+    await page.getByRole('button', { name: '查看内容' }).click();
+    await expect(page.locator('.plain-text')).toBeVisible();
+    await settleMotion(page);
+    await page.screenshot({ path: testInfo.outputPath('reader-mobile.png'), fullPage: true });
+  });
 });
 test('search ignores stale replies after a newer query', async ({ page }) => {
   await login(page);
@@ -197,8 +271,25 @@ test('narrow screen has no overflow, clipboard fallback, invalid code feedback',
   await page.getByLabel('访问码 区分大小写').fill('ab');
   await page.getByRole('button', { name: '查看内容' }).click();
   await expect(page.getByRole('alert')).toContainText('恰好四位');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const response = Promise.withResolvers<void>();
+  await page.route(
+    '**/api/share/resolve',
+    async (route) => {
+      await response.promise;
+      await route.continue();
+    },
+    { times: 1 },
+  );
   await page.getByLabel('访问码 区分大小写').fill('Ab12');
-  await page.getByRole('button', { name: '查看内容' }).click();
+  try {
+    await page.getByRole('button', { name: '查看内容' }).click();
+    const spinner = page.locator('[data-slot=button-loading-indicator]');
+    await expect(spinner).toBeVisible();
+    await expect(spinner).toHaveCSS('animation-name', 'none');
+  } finally {
+    response.resolve();
+  }
   await expect(page.locator('.plain-text')).toBeVisible();
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'clipboard', {
@@ -215,6 +306,8 @@ test('narrow screen has no overflow, clipboard fallback, invalid code feedback',
   expect(selected.value).toBe(body);
   expect(selected.start).toBe(0);
   expect(selected.end).toBe(body.length);
+  await page.getByRole('button', { name: '返回首页', exact: true }).press('Enter');
+  await expect(page.locator('#access-code')).toBeFocused();
 });
 
 test('a delayed mutation reload uses the current search filters', async ({ page }) => {
@@ -228,7 +321,9 @@ test('a delayed mutation reload uses the current search filters', async ({ page 
     await new Promise((resolve) => setTimeout(resolve, 900));
     await route.fulfill({ response });
   });
-  await page.getByRole('button', { name: '停用项目协作小记', exact: true }).click();
+  const shareStatus = page.getByRole('switch', { name: '分享状态：项目协作小记', exact: true });
+  await expect(shareStatus).toHaveAttribute('aria-checked', 'true');
+  await shareStatus.click();
   await page.getByRole('textbox', { name: '搜索分享' }).fill('灵感');
   await expect(page.locator('.share-row')).toHaveCount(1);
   await expect(page.locator('.share-row')).toContainText('一段写给周一的灵感');
@@ -256,7 +351,7 @@ test('password change revokes sessions and logout returns to the login page', as
   await page.getByLabel('账号', { exact: true }).fill('test-owner');
   await page.getByLabel('密码', { exact: true }).fill('654321');
   await page.getByRole('button', { name: '登录', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '我的分享.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '我的分享', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '退出登录' }).click();
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible();
 });

@@ -1,17 +1,15 @@
 import { settleMotion } from './motion';
-import { test, expect, type Page } from '@playwright/test';
-import { openDb } from '../../src/server/db.js';
+import { test, expect, type Locator, type Page } from '@playwright/test';
+import { openBrowserDb } from './fixture';
 import { hashPassword } from '../../src/server/security.js';
 const password = 'contrast-test-only-password';
 test.beforeAll(async () => {
-  const db = openDb('./data/acceptance.db');
+  const db = openBrowserDb();
   db.exec('DROP TRIGGER IF EXISTS protect_superadmin_identity');
   db.prepare('DELETE FROM user_sessions').run();
-  db.prepare('UPDATE users SET username=?,password_hash=?,updated_at=? WHERE id=1').run(
-    'contrast-owner',
-    await hashPassword(password),
-    Date.now(),
-  );
+  db.prepare(
+    "INSERT INTO users(id,username,password_hash,role,created_at,updated_at) VALUES(1,?,?,'superadmin',0,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,password_hash=excluded.password_hash,updated_at=excluded.updated_at",
+  ).run('contrast-owner', await hashPassword(password), Date.now());
   db.prepare('DELETE FROM shares').run();
   db.prepare('INSERT INTO shares VALUES(?,?,?,?,?,1,?,?,1)').run(
     'contrast-fixture',
@@ -26,9 +24,17 @@ test.beforeAll(async () => {
 });
 async function contrast(page: Page) {
   const failures = await page.evaluate(() => {
-    const rgba = (s: string) => (s.match(/[\d.]+/g) || []).map(Number);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d', { willReadFrequently: true })!;
+    const rgba = (color: string) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    };
     const over = (fg: number[], bg: number[]) => {
-      const a = fg[3] ?? 1;
+      const a = fg[3] / 255;
       return fg.slice(0, 3).map((v, i) => v * a + bg[i] * (1 - a));
     };
     const lum = (c: number[]) =>
@@ -43,7 +49,7 @@ async function contrast(page: Page) {
         !Array.from(el.childNodes).some(
           (n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim(),
         ) ||
-        el.closest('svg,script,style,[disabled]') ||
+        el.closest('svg,script,style,[disabled],[aria-hidden=true],[inert]') ||
         !el.getClientRects().length
       )
         continue;
@@ -67,6 +73,20 @@ async function contrast(page: Page) {
   });
   expect(failures).toEqual([]);
 }
+async function activeTransitionDuration(popup: Locator) {
+  return popup.evaluate((el) => {
+    const transition = el.getAnimations().find((animation) => animation instanceof CSSTransition);
+    return Number(transition?.effect?.getTiming().duration ?? 0);
+  });
+}
+
+async function scrollLock(page: Page) {
+  return page.evaluate(() => [
+    document.documentElement.style.overflow,
+    document.body.style.overflow,
+  ]);
+}
+
 async function owner(page: Page) {
   await page.goto('/manage');
   await page.locator('[name=username]').fill('contrast-owner');
@@ -76,10 +96,11 @@ async function owner(page: Page) {
 }
 for (const colorScheme of ['light', 'dark'] as const)
   for (const width of [1440, 320]) {
-    test(`contrast and create modal: ${colorScheme}, ${width}px`, async ({ page }) => {
+    test(`contrast and create modal: ${colorScheme}, ${width}px`, async ({ page }, testInfo) => {
       await page.emulateMedia({ colorScheme });
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/');
+      await expect(page.getByRole('button', { name: '查看内容' })).toBeVisible();
       await contrast(page);
       await page.locator('#access-code').fill('Ab12');
       await page.locator('.access-card .primary').click();
@@ -94,14 +115,15 @@ for (const colorScheme of ['light', 'dark'] as const)
       await contrast(page);
       await settleMotion(page);
       await page.screenshot({
-        path: `docs/evidence/login-${width === 320 ? 'mobile' : 'desktop'}.png`,
+        path: testInfo.outputPath(`login-${width === 320 ? 'mobile' : 'desktop'}.png`),
         fullPage: true,
       });
       await owner(page);
+      const initialScrollLock = await scrollLock(page);
       await contrast(page);
       const trigger = page.locator('.dashboard-top .primary');
       await trigger.click();
-      const modal = page.locator('dialog.share-dialog');
+      const modal = page.getByRole('dialog', { name: /^(新建|编辑)分享$/ });
       await expect(modal).toBeVisible();
       await expect(modal).not.toHaveClass(/drawer/);
       const rect = await modal.boundingBox();
@@ -111,17 +133,26 @@ for (const colorScheme of ['light', 'dark'] as const)
       await expect(page.locator('#title')).toBeFocused();
       await contrast(page);
       await page.locator('#title').fill('Unsaved draft');
-      await page.locator('.drawer-body').evaluate((el) => (el.scrollTop = el.scrollHeight));
-      await expect(modal.locator('.drawer-footer .primary')).toBeVisible();
+      const submit = modal.getByRole('button', { name: '创建分享', exact: true });
+      await expect(submit).toBeInViewport({ ratio: 1 });
+      const scroll = modal.locator('[data-slot=scroll-area-viewport]');
+      await scroll.evaluate((el) => (el.scrollTop = el.scrollHeight));
+      await expect(submit).toBeInViewport({ ratio: 1 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
       await settleMotion(page);
       await page.screenshot({
-        path: `docs/evidence/create-${width === 320 ? 'mobile' : 'desktop'}.png`,
+        path: testInfo.outputPath(`create-${width === 320 ? 'mobile' : 'desktop'}.png`),
       });
+      if (width === 320) {
+        await scroll.evaluate((el) => (el.scrollTop = 0));
+        await submit.click();
+        await expect(modal.getByRole('alert')).toBeInViewport({ ratio: 1 });
+        await expect(submit).toBeInViewport({ ratio: 1 });
+      }
       await page.keyboard.press('Escape');
-      const discard = page.getByRole('dialog', { name: '放弃未保存的更改', exact: true });
+      const discard = page.getByRole('alertdialog', { name: '放弃未保存的更改？', exact: true });
       await expect(discard).toBeVisible();
       await expect(discard.getByRole('heading')).toHaveText('放弃未保存的更改？');
       await expect(discard.locator('.secondary')).toBeFocused();
@@ -129,7 +160,7 @@ for (const colorScheme of ['light', 'dark'] as const)
       await contrast(page);
       await settleMotion(page);
       await page.screenshot({
-        path: `docs/evidence/discard-${width === 320 ? 'mobile' : 'desktop'}.png`,
+        path: testInfo.outputPath(`discard-${width === 320 ? 'mobile' : 'desktop'}.png`),
       });
       await page.keyboard.press('Escape');
       await expect(discard).toHaveCount(0);
@@ -138,7 +169,7 @@ for (const colorScheme of ['light', 'dark'] as const)
       await page.locator('.danger-button').click();
       await expect(modal).toHaveCount(0);
       await expect(trigger).toBeFocused();
-      expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+      await expect.poll(() => scrollLock(page)).toEqual(initialScrollLock);
       const editTrigger = page.locator('.edit-button').first();
       await editTrigger.click();
       await expect(modal).toBeVisible();
@@ -155,7 +186,7 @@ for (const colorScheme of ['light', 'dark'] as const)
         true,
       );
       await page.screenshot({
-        path: `docs/evidence/edit-${width === 320 ? 'mobile' : 'desktop'}.png`,
+        path: testInfo.outputPath(`edit-${width === 320 ? 'mobile' : 'desktop'}.png`),
       });
       await page.locator('#title').fill('Unsaved edit');
       await page.keyboard.press('Escape');
@@ -167,14 +198,14 @@ for (const colorScheme of ['light', 'dark'] as const)
       await page.locator('.danger-button').click();
       await expect(modal).toHaveCount(0);
       await expect(editTrigger).toBeFocused();
-      expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+      await expect.poll(() => scrollLock(page)).toEqual(initialScrollLock);
       await editTrigger.click();
       await expect(page.locator('#title')).toHaveValue('Contrast sample');
       await expect(modal.locator('.existing-code code')).toHaveText('Ab12');
       await page.keyboard.press('Escape');
       await expect(modal).toHaveCount(0);
-      await page.locator('.account button').first().click();
-      await expect(page.locator('dialog.modal')).toBeVisible();
+      await page.getByRole('button', { name: '修改密码', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: '修改密码', exact: true })).toBeVisible();
       await contrast(page);
       await page.keyboard.press('Escape');
     });
@@ -186,6 +217,7 @@ for (const editorMode of ['new', 'edit'] as const)
       await page.emulateMedia({ reducedMotion });
       await page.setViewportSize({ width: 1440, height: 1000 });
       await owner(page);
+      const initialScrollLock = await scrollLock(page);
       if (reducedMotion === 'no-preference') {
         const session = await page.context().newCDPSession(page);
         await session.send('Animation.enable');
@@ -196,40 +228,150 @@ for (const editorMode of ['new', 'edit'] as const)
         .first();
       await trigger.click();
       const modal = page.locator('.share-dialog');
-      await expect(modal).toHaveCSS('width', '1120px');
+      await expect(modal).toHaveCSS('width', '1024px');
       if (reducedMotion === 'no-preference') {
-        const entry = await modal.evaluate(
-          (el) =>
-            el
-              .getAnimations()
-              .find((a) => !(a instanceof CSSAnimation))
-              ?.effect?.getTiming().duration,
-        );
-        expect(entry).toBe(220);
+        await expect
+          .poll(() => activeTransitionDuration(modal), { intervals: [16, 32, 64] })
+          .toBeGreaterThan(0);
       } else {
-        expect(await modal.evaluate((el) => el.getAnimations().length)).toBe(0);
+        const hasMotion = await modal.evaluate((el) =>
+          el
+            .getAnimations()
+            .some((animation) => Number(animation.effect?.getTiming().duration) > 1),
+        );
+        expect(hasMotion).toBe(false);
       }
       await expect(modal).toHaveCSS('opacity', '1');
       await modal.locator('.drawer-header button').click();
       if (reducedMotion === 'no-preference') {
-        await expect(modal).toHaveAttribute('data-exiting', 'true');
-        const exit = await modal.evaluate(
-          (el) =>
-            el
-              .getAnimations()
-              .find((a) => !(a instanceof CSSAnimation))
-              ?.effect?.getTiming().duration,
-        );
-        expect(exit).toBe(150);
+        await expect(modal).toHaveAttribute('data-ending-style', '');
+        await expect
+          .poll(() => activeTransitionDuration(modal), { intervals: [16, 32, 64] })
+          .toBeGreaterThan(0);
         // Changing the system setting mid-exit must still finish dismissal.
         await page.emulateMedia({ reducedMotion: 'reduce' });
       }
       await expect(modal).toHaveCount(0);
       await expect(trigger).toBeFocused();
-      expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+      await expect.poll(() => scrollLock(page)).toEqual(initialScrollLock);
       await trigger.click();
+      await expect(modal.locator('#title')).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(modal).toHaveCount(0);
       await expect(trigger).toBeFocused();
     });
   }
+
+for (const { width, reducedMotion } of [
+  { width: 1440, reducedMotion: 'no-preference' },
+  { width: 320, reducedMotion: 'reduce' },
+] as const) {
+  test(`delete confirmation returns keyboard focus: ${width}px, ${reducedMotion}`, async ({
+    page,
+  }) => {
+    const firstTitle = '删除焦点样例 A';
+    const lastTitle = '删除焦点样例 B';
+    const firstId = 'delete-focus-first';
+    const db = openBrowserDb();
+    try {
+      db.transaction(() => {
+        db.prepare('DELETE FROM shares WHERE owner_id=1').run();
+        const insert = db.prepare('INSERT INTO shares VALUES(?,?,?,?,1,1,?,?,1)');
+        insert.run(firstId, firstTitle, 'First synthetic share', 'Df01', 1, 1);
+        insert.run('delete-focus-last', lastTitle, 'Last synthetic share', 'Df02', 2, 2);
+      })();
+    } finally {
+      db.close();
+    }
+
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion });
+    await owner(page);
+
+    const rows = page.locator('.share-row');
+    const newShare = page.locator('.dashboard-top').getByRole('button', { name: '新建分享' });
+    const dialog = page.getByRole('alertdialog', {
+      name: '删除这段分享？',
+      exact: true,
+      includeHidden: true,
+    });
+    const cancel = dialog.getByRole('button', { name: '取消', exact: true });
+    const confirm = dialog.getByRole('button', { name: '确认删除', exact: true });
+    const menuTrigger = (title: string) =>
+      page.getByRole('button', { name: '更多操作 ' + title, exact: true });
+
+    async function openDelete(title: string) {
+      await menuTrigger(title).press('ArrowDown');
+      const menu = page.getByRole('menu');
+      const item = menu.getByRole('menuitem', { name: '删除 ' + title, exact: true });
+      await expect(menu.getByRole('menuitem').first()).toBeFocused();
+      await page.keyboard.press('End');
+      await expect(item).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText(title);
+      await expect(cancel).toBeFocused();
+    }
+
+    async function cancelDelete(title: string) {
+      await page.keyboard.press('Enter');
+      await expect(dialog).toHaveCount(0);
+      await expect(menuTrigger(title)).toBeFocused();
+    }
+
+    async function deleteAndRefresh(title: string, remaining: number) {
+      await openDelete(title);
+      let refreshStarted = false;
+      const allowRefresh = Promise.withResolvers<void>();
+      await page.route(
+        '**/api/admin/shares/search',
+        async (route) => {
+          refreshStarted = true;
+          await allowRefresh.promise;
+          await route.continue();
+        },
+        { times: 1 },
+      );
+      try {
+        await confirm.press('Enter');
+        await expect.poll(() => refreshStarted).toBe(true);
+        await expect(dialog).toBeVisible();
+        await expect(dialog.locator('button[type=submit]')).toBeDisabled();
+      } finally {
+        allowRefresh.resolve();
+      }
+      await expect(dialog).toHaveCount(0);
+      await expect(rows).toHaveCount(remaining);
+      await expect(newShare).toBeFocused();
+    }
+
+    await expect(rows).toHaveCount(2);
+    await openDelete(firstTitle);
+    await cancelDelete(firstTitle);
+    await expect(rows).toHaveCount(2);
+
+    const failure = '暂时无法删除这段分享';
+    await page.route(
+      '**/api/admin/shares/' + firstId,
+      async (route) => {
+        expect(route.request().method()).toBe('DELETE');
+        await route.fulfill({ status: 409, json: { message: failure } });
+      },
+      { times: 1 },
+    );
+    await openDelete(firstTitle);
+    await confirm.press('Enter');
+    const alert = dialog.getByRole('alert');
+    await expect(alert).toHaveText(failure);
+    await expect(alert).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(cancel).toBeFocused();
+    await cancelDelete(firstTitle);
+    await expect(rows).toHaveCount(2);
+
+    await deleteAndRefresh(firstTitle, 1);
+    await expect(menuTrigger(lastTitle)).toBeVisible();
+    await deleteAndRefresh(lastTitle, 0);
+    await expect(page.getByText('暂无分享', { exact: true })).toBeVisible();
+  });
+}

@@ -1,9 +1,30 @@
+import { mkdirSync, mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
+
+const port = process.env.TEXTRELAY_E2E_PORT ?? '3000';
+if (!/^[1-9]\d{0,4}$/.test(port) || Number(port) > 65535) {
+  throw new Error('TEXTRELAY_E2E_PORT must be a valid TCP port');
+}
+const host = '127.0.0.1';
+const baseURL = `http://${host}:${port}`;
+
+function createRunDirectory() {
+  const outputRoot = join(import.meta.dirname, 'test-results');
+  mkdirSync(outputRoot, { recursive: true });
+  return mkdtempSync(join(outputRoot, 'browser-'));
+}
+
+// Playwright reloads the configuration in worker processes.
+const runDirectory = (process.env.TEXTRELAY_E2E_RUN_DIRECTORY ??= createRunDirectory());
+const databasePath = join(runDirectory, 'acceptance.db');
+
 export default defineConfig({
   testDir: './tests/browser',
+  outputDir: join(runDirectory, 'artifacts'),
   workers: 1,
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL,
     browserName: 'chromium',
     launchOptions: {
       executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
@@ -11,16 +32,21 @@ export default defineConfig({
     },
     trace: 'retain-on-failure',
   },
-  reporter: [['list'], ['json', { outputFile: 'test-results/browser.json' }]],
+  reporter: [['list'], ['json', { outputFile: join(runDirectory, 'browser.json') }]],
   webServer: {
     command: 'npm run start',
-    url: 'http://localhost:3000/api/health',
+    url: `${baseURL}/api/health`,
     reuseExistingServer: false,
     env: {
       NODE_ENV: 'test',
-      APP_ORIGIN: 'http://localhost:3000',
+      HOST: host,
+      PORT: port,
+      APP_ORIGIN: baseURL,
       COOKIE_SECURE: 'false',
-      DATABASE_PATH: './data/acceptance.db',
+      DATABASE_PATH: databasePath,
+      ATTACHMENT_DIR: join(runDirectory, 'attachments'),
+      PUBLIC_READ_ENABLED: 'true',
+      TRUSTED_PROXY: '',
     },
   },
 });
